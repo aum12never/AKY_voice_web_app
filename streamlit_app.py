@@ -35,7 +35,7 @@ def check_password():
 # --- ส่วนแสดงผลหลักของแอป ---
 st.set_page_config(page_title="Affiliate Voice Generator", layout="wide")
 
-st.title("🎙️ Affiliate Voice Generator Pro")
+st.title("🎙️ Affiliate Voice Generator Pro AKY")
 st.write("---")
 
 # ตรวจสอบรหัสผ่านก่อนแสดงแอป
@@ -141,4 +141,5 @@ if check_password():
                 except Exception as e:
                     # ตอนนี้จะแสดง Error ที่แท้จริงจาก Backend แล้ว
                     st.error(f"เกิดข้อผิดพลาด: {e}")
+
 
