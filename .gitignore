@@ -1,0 +1,9 @@
+# Ignore Streamlit secrets file
+.streamlit/secrets.toml
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore ffmpeg executable
+ffmpeg.exe
