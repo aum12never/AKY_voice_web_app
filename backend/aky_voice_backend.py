@@ -3,8 +3,8 @@
 import os
 import struct
 import subprocess
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai import types
 from tqdm import tqdm
 
 
@@ -127,3 +127,4 @@ def parse_audio_mime_type(mime_type: str) -> dict[str, int | None]:
             except:
                 pass
     return {"bits_per_sample": bits_per_sample, "rate": rate}
+
