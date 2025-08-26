@@ -1,0 +1,4 @@
+google-generativeai
+tqdm
+streamlit
+ttkbootstrap
