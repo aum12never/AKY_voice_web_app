@@ -1,40 +1,44 @@
-# File: aky_voice_backend.py (Final Version for google-generativeai >= 0.9.0)
+# File: aky_voice_backend.py (The Definitive, Stable Version)
 # -*- coding: utf-8 -*-
 import os
 import google.generativeai as genai
 
 def run_tts_generation(
     api_key: str, style_instructions: str, main_text: str, voice_name: str,
-    output_folder: str, output_filename: str, temperature: float, # temperature is unused in this API but kept for compatibility
-    ffmpeg_path: str # ffmpeg_path is unused in this API but kept for compatibility
+    output_folder: str, output_filename: str, temperature: float,
+    ffmpeg_path: str
 ):
     """
-    ฟังก์ชันหลักที่รับการตั้งค่าทั้งหมดเข้ามา
+    ฟังก์ชันหลักที่ใช้โมเดล TTS โดยเฉพาะเพื่อความเสถียร
     Returns: Path ของไฟล์ MP3 ที่สำเร็จ
     Raises: ValueError หากเกิดข้อผิดพลาด
     """
     try:
         genai.configure(api_key=api_key)
 
+        # --- [แก้ไข] ใช้โมเดลที่สร้างมาเพื่อทำเสียงโดยเฉพาะ ---
+        tts_model = genai.GenerativeModel(model_name="models/tts-1")
+
+        # รวม prompt ทั้งหมดเข้าด้วยกัน
         full_prompt = f"{style_instructions}. {main_text}"
 
-        # API สำหรับ Text-to-Speech โดยเฉพาะ
-        response = genai.text_to_speech(
-            text=full_prompt,
-            voice_name=voice_name,
+        # --- [แก้ไข] เรียกใช้ generate_content กับโมเดล TTS ---
+        # API จะจัดการเรื่องเสียงให้เองจากชนิดของโมเดล
+        response = tts_model.generate_content(
+            full_prompt,
+            stream=False
         )
 
-        # ข้อมูลเสียงจะอยู่ใน attribute 'audio_data'
-        audio_buffer = response.audio_data
+        # --- [แก้ไข] วิธีการเข้าถึงข้อมูลเสียงสำหรับโมเดล TTS ---
+        # ข้อมูลเสียงจะอยู่ใน Part แรกของ response ซึ่งเป็น blob
+        audio_buffer = response.parts[0].data
 
         if audio_buffer:
-            # กำหนด path ของไฟล์ MP3 ที่จะบันทึก
             _, mp3_path = determine_output_paths(output_folder, output_filename)
 
-            # บันทึกเป็น MP3 โดยตรง
+            # บันทึกข้อมูลเสียงที่ได้มาเป็นไฟล์ MP3 โดยตรง
             save_binary_file(mp3_path, audio_buffer)
 
-            # ไม่จำเป็นต้องใช้ FFMPEG ในขั้นตอนนี้แล้ว
             return mp3_path
         else:
             raise ValueError("No audio data received from the API.")
