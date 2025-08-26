@@ -123,7 +123,7 @@ if check_password():
                         output_folder=temp_output_folder,
                         output_filename=output_filename,
                         temperature=temperature,
-                        ffmpeg_path="ffmpeg.exe"  # <--- แก้ไขตรงนี้
+                        ffmpeg_path="ffmpeg"  # <--- แก้ไขตรงนี้
                     )
 
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
@@ -141,3 +141,4 @@ if check_password():
                 except Exception as e:
                     # ตอนนี้จะแสดง Error ที่แท้จริงจาก Backend แล้ว
                     st.error(f"เกิดข้อผิดพลาด: {e}")
+
