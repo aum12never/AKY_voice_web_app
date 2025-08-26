@@ -1,4 +1,4 @@
-google-generativeai>=0.9.0
+google-generativeai
 tqdm
 streamlit
 
