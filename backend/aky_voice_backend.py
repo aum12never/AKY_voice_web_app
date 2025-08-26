@@ -1,12 +1,11 @@
-# File: aky_voice_backend.py (Updated Version)
+# File: aky_voice_backend.py (Final Version for New Library)
 # -*- coding: utf-8 -*-
 import os
 import struct
 import subprocess
 import google.generativeai as genai
-from google.generativeai import types
-from tqdm import tqdm
-
+# --- [แก้ไข] Import รูปแบบใหม่จาก genai โดยตรง ไม่ผ่าน types ---
+from google.generativeai.types import GenerationConfig, SpeechConfig, VoiceConfig, PrebuiltVoiceConfig
 
 def run_tts_generation(
     api_key: str, style_instructions: str, main_text: str, voice_name: str,
@@ -19,26 +18,24 @@ def run_tts_generation(
     Raises: ValueError หากเกิดข้อผิดพลาด
     """
     try:
-        # --- [แก้ไข] เปลี่ยนวิธีการยืนยันตัวตนเป็นแบบใหม่ ---
         genai.configure(api_key=api_key)
 
-        contents = prepare_prompt(style_instructions, main_text)
+        # --- [แก้ไข] รูปแบบการสร้าง prompt จะถูกส่งเป็น list ของ string โดยตรง ---
+        contents = [style_instructions, main_text]
         config = prepare_api_config(temperature, voice_name)
         wav_path, mp3_path = determine_output_paths(
             output_folder, output_filename)
 
-        # --- [แก้ไข] เปลี่ยนวิธีการเรียกใช้โมเดลเป็นแบบใหม่ ---
         tts_model = genai.GenerativeModel(model_name="gemini-2.5-pro-preview-tts")
-        stream = tts_model.generate_content(
+        # --- [แก้ไข] การเรียกใช้ API เปลี่ยนแปลงเล็กน้อย ---
+        response = tts_model.generate_content(
             contents=contents,
             generation_config=config,
-            stream=True
+            stream=False # เปลี่ยนเป็น False เพื่อให้จัดการง่ายขึ้น
         )
 
-        audio_buffer = b''
-        for chunk in stream:
-            if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts and chunk.candidates[0].content.parts[0].inline_data:
-                audio_buffer += chunk.candidates[0].content.parts[0].inline_data.data
+        # --- [แก้ไข] วิธีการเข้าถึงข้อมูลเสียงที่ได้รับกลับมา ---
+        audio_buffer = response.candidates[0].content.parts[0].inline_data.data
 
         if audio_buffer:
             final_wav_data = convert_to_wav(
@@ -59,30 +56,33 @@ def convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path):
     try:
         command = [ffmpeg_path, '-i', wav_path, '-y',
                    '-acodec', 'libmp3lame', '-q:a', '2', mp3_path]
-        # [แก้ไข] เพิ่มการดักจับ output ของ FFMPEG
-        result = subprocess.run(command, check=True,
-                                capture_output=True, text=True)
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        raise FileNotFoundError(
-            f"FFMPEG not found. Make sure '{ffmpeg_path}' is accessible.")
+        raise FileNotFoundError(f"FFMPEG not found. Make sure '{ffmpeg_path}' is accessible.")
     except subprocess.CalledProcessError as e:
-        # หาก FFMPEG ทำงานผิดพลาด ให้แสดง log ออกมา
-        raise RuntimeError(
-            f"FFMPEG conversion failed:\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}")
+        raise RuntimeError(f"FFMPEG conversion failed:\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}")
     except Exception as e:
-        raise RuntimeError(
-            f"An unexpected error occurred during FFMPEG conversion: {e}")
+        raise RuntimeError(f"An unexpected error occurred during FFMPEG conversion: {e}")
 
+# --- ฟังก์ชัน Helper อื่นๆ ---
 
-# --- ฟังก์ชัน Helper อื่นๆ (เหมือนเดิม ไม่ต้องแก้ไข) ---
-
-def prepare_prompt(style, text):
-    return [types.Content(role="user", parts=[types.Part.from_text(text=style), types.Part.from_text(text=text)])]
-
+# --- [ลบออก] ฟังก์ชันนี้ไม่จำเป็นอีกต่อไป เพราะเราส่ง prompt เป็น list ของ string ง่ายๆ แทน ---
+# def prepare_prompt(style, text):
+#     return ...
 
 def prepare_api_config(temp, voice):
-    return types.GenerateContentConfig(temperature=temp, response_modalities=["audio"], speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice))))
-
+    # --- [แก้ไข] ใช้ Class รูปแบบใหม่ที่ import มาโดยตรง ---
+    return GenerationConfig(
+        temperature=temp,
+        response_modalities=["audio"],
+        speech_config=SpeechConfig(
+            voice_config=VoiceConfig(
+                prebuilt_voice_config=PrebuiltVoiceConfig(
+                    voice_name=voice
+                )
+            )
+        )
+    )
 
 def determine_output_paths(folder, filename_base):
     os.makedirs(folder, exist_ok=True)
@@ -97,13 +97,11 @@ def determine_output_paths(folder, filename_base):
         wav_output = f"{file_base_path} ({counter}).wav"
         mp3_output = f"{mp3_base_path} ({counter}).mp3"
         counter += 1
-    return wav_output, mp3_output
-
+    return wav_output, mp3_path
 
 def save_binary_file(file_name, data):
     with open(file_name, "wb") as f:
         f.write(data)
-
 
 def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     parameters = parse_audio_mime_type(mime_type)
@@ -113,21 +111,14 @@ def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
                          sample_rate * (bits_per_sample // 8), (bits_per_sample // 8), bits_per_sample, b"data", len(audio_data))
     return header + audio_data
 
-
 def parse_audio_mime_type(mime_type: str) -> dict[str, int | None]:
     bits_per_sample = 16
     rate = 24000
     for param in mime_type.split(";"):
         if param.lower().strip().startswith("rate="):
-            try:
-                rate = int(param.split("=", 1)[1])
-            except:
-                pass
+            try: rate = int(param.split("=", 1)[1])
+            except: pass
         elif param.strip().startswith("audio/L"):
-            try:
-                bits_per_sample = int(param.split("L", 1)[1])
-            except:
-                pass
+            try: bits_per_sample = int(param.split("L", 1)[1])
+            except: pass
     return {"bits_per_sample": bits_per_sample, "rate": rate}
-
-
