@@ -17,10 +17,10 @@ def run_tts_generation(
     แต่มีการ import และสร้างอ็อบเจกต์ที่ถูกต้องสำหรับไลบรารีเวอร์ชันใหม่
     """
     try:
-        # --- [แก้ไข] สร้าง Client object ที่ถูกต้อง ---
+        # --- สร้าง Client object ที่ถูกต้อง ---
         client = Client(api_key=api_key)
 
-        # --- [แก้ไข] สร้าง contents object ที่ถูกต้อง ---
+        # --- สร้าง contents object ที่ถูกต้อง ---
         contents = [
             Content(
                 role="user",
@@ -30,8 +30,8 @@ def run_tts_generation(
                 ]
             )
         ]
-
-        # --- [แก้ไข] สร้าง config object ที่ถูกต้อง ---
+        
+        # --- สร้าง config object ที่ถูกต้อง ---
         config = GenerationConfig(
             temperature=temperature,
             response_modalities=["audio"],
