@@ -19,17 +19,20 @@ def run_tts_generation(
     Raises: ValueError หากเกิดข้อผิดพลาด
     """
     try:
-        if not api_key:
-            raise ValueError("API Key is missing.")
+        # --- [แก้ไข] เปลี่ยนวิธีการยืนยันตัวตนเป็นแบบใหม่ ---
+        genai.configure(api_key=api_key)
 
-        client = genai.Client(api_key=api_key)
         contents = prepare_prompt(style_instructions, main_text)
         config = prepare_api_config(temperature, voice_name)
         wav_path, mp3_path = determine_output_paths(
             output_folder, output_filename)
 
-        stream = client.models.generate_content_stream(
-            model="gemini-2.5-pro-preview-tts", contents=contents, config=config
+        # --- [แก้ไข] เปลี่ยนวิธีการเรียกใช้โมเดลเป็นแบบใหม่ ---
+        tts_model = genai.GenerativeModel(model_name="gemini-2.5-pro-preview-tts")
+        stream = tts_model.generate_content(
+            contents=contents,
+            generation_config=config,
+            stream=True
         )
 
         audio_buffer = b''
@@ -43,12 +46,11 @@ def run_tts_generation(
             save_binary_file(wav_path, final_wav_data)
             convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
             os.remove(wav_path)
-            return mp3_path  # <-- [แก้ไข] ส่ง path กลับไปเมื่อสำเร็จ
+            return mp3_path
         else:
             raise ValueError("No audio data received from the API.")
 
     except Exception as e:
-        # [แก้ไข] ส่งต่อ Error ออกไปเพื่อให้ Frontend รับรู้
         raise ValueError(f"Backend Error: {e}")
 
 
@@ -127,4 +129,5 @@ def parse_audio_mime_type(mime_type: str) -> dict[str, int | None]:
             except:
                 pass
     return {"bits_per_sample": bits_per_sample, "rate": rate}
+
 
