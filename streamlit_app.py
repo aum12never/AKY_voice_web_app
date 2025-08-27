@@ -1,4 +1,4 @@
-# File: streamlit_app.py (แก้ไข Bug ตอนลบโปรไฟล์)
+# File: streamlit_app.py (แก้ไข Bug และปรับปรุง Profile ทั้งระบบ)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
@@ -9,46 +9,43 @@ import time
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
-        if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
+        if st.session_state.get("password") == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]
+            if "password" in st.session_state:
+                del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
+    if not st.session_state.get("password_correct", False):
         st.text_input("Password", type="password", on_change=password_entered, key="password")
+        if not st.session_state.get("password_correct", False):
+             st.error("😕 Password incorrect")
         return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("Password", type="password", on_change=password_entered, key="password")
-        st.error("😕 Password incorrect")
-        return False
-    else:
-        return True
+    return True
 
 # --- ฟังก์ชันสำหรับ "โหลด" ค่าจากโปรไฟล์มาแสดงบน UI ---
 def load_profile_to_ui():
-    """โหลดค่าจากโปรไฟล์ที่เลือกใน st.session_state.current_profile มาใส่ใน State ของ UI"""
-    profile_name = st.session_state.current_profile
-    if profile_name and profile_name in st.session_state.profiles:
+    """โหลดค่าจากโปรไฟล์ที่เลือกมาใส่ใน State ของ UI"""
+    profile_name = st.session_state.get('current_profile')
+    if profile_name and profile_name in st.session_state.get('profiles', {}):
         profile_data = st.session_state.profiles[profile_name]
         st.session_state.ui_style_instructions = profile_data.get('style', '')
         st.session_state.ui_main_text = profile_data.get('script', '')
         st.session_state.ui_voice_select = profile_data.get('voice', 'Achernar - Soft')
         st.session_state.ui_temperature = profile_data.get('temp', 0.9)
         st.session_state.ui_output_filename = profile_data.get('filename', 'my_voiceover')
-    else: # กรณีไม่มีโปรไฟล์เหลืออยู่ ให้เคลียร์ค่า UI
+    else: # กรณีไม่มีโปรไฟล์หรือโปรไฟล์ที่เลือกไม่มีอยู่จริง
         st.session_state.ui_style_instructions = ""
         st.session_state.ui_main_text = ""
         st.session_state.ui_voice_select = "Achernar - Soft"
         st.session_state.ui_temperature = 0.9
         st.session_state.ui_output_filename = "new_voice"
 
-
 # --- ฟังก์ชันสำหรับ "บันทึก" ค่าจาก UI กลับไปที่โปรไฟล์ ---
 def save_ui_to_profile():
     """บันทึกค่าจาก State ของ UI กลับไปที่โปรไฟล์ที่กำลังเลือกอยู่"""
-    profile_name = st.session_state.current_profile
-    if profile_name and profile_name in st.session_state.profiles:
+    profile_name = st.session_state.get('current_profile')
+    if profile_name and profile_name in st.session_state.get('profiles', {}):
         st.session_state.profiles[profile_name]['style'] = st.session_state.ui_style_instructions
         st.session_state.profiles[profile_name]['script'] = st.session_state.ui_main_text
         st.session_state.profiles[profile_name]['voice'] = st.session_state.ui_voice_select
@@ -67,14 +64,18 @@ if check_password():
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
 
-    if 'profiles' not in st.session_state:
+    # --- [แก้ไข] ตรวจสอบและสร้าง State ทั้งหมดให้มั่นใจว่ามีอยู่จริง ---
+    if 'ui_style_instructions' not in st.session_state:
         st.session_state.profiles = {}
         st.session_state.current_profile = None
-        st.session_state.ui_style_instructions = ""
-        st.session_state.ui_main_text = ""
-        st.session_state.ui_voice_select = "Achernar - Soft"
-        st.session_state.ui_temperature = 0.9
-        st.session_state.ui_output_filename = "new_voice"
+        # ตั้งค่าเริ่มต้นให้ State ของ UI
+        load_profile_to_ui()
+
+    # --- [ปรับปรุง] ตรรกะการเลือกโปรไฟล์หลังการสร้าง ---
+    if 'just_created_profile' in st.session_state:
+        st.session_state.current_profile = st.session_state.just_created_profile
+        del st.session_state.just_created_profile
+        load_profile_to_ui()
 
     with st.sidebar:
         st.header("👤 Profile Management")
@@ -85,34 +86,25 @@ if check_password():
         
         with col1:
             profile_options = list(st.session_state.profiles.keys())
-            
-            # [แก้ไข] ตรวจสอบว่า current_profile ยังมีอยู่จริงหรือไม่ ถ้าไม่ให้เลือกอันแรกแทน
-            if st.session_state.current_profile not in profile_options:
-                st.session_state.current_profile = profile_options[0] if profile_options else None
-                # ไม่ต้อง rerun แต่ปล่อยให้โค้ดทำงานต่อไปตามปกติ
-            
             if not profile_options:
                 st.caption("No profiles yet.")
             else:
                 st.selectbox(
-                    "Select Profile:",
-                    options=profile_options,
-                    key='current_profile',
-                    on_change=load_profile_to_ui,
-                    label_visibility="collapsed"
+                    "Select Profile:", options=profile_options, key='current_profile',
+                    on_change=load_profile_to_ui, label_visibility="collapsed"
                 )
         
         with col2:
             if st.session_state.current_profile:
-                # --- [แก้ไข] ตรรกะการลบโปรไฟล์ที่ถูกต้อง ---
                 if st.button("🗑️", key="delete_profile", help=f"Delete profile '{st.session_state.current_profile}'"):
                     profile_to_delete = st.session_state.current_profile
                     del st.session_state.profiles[profile_to_delete]
                     
-                    st.success(f'ลบ Profile "{profile_to_delete}" แล้ว')
+                    remaining_profiles = list(st.session_state.profiles.keys())
+                    st.session_state.current_profile = remaining_profiles[0] if remaining_profiles else None
                     
-                    # ตั้งค่า current_profile เป็น None ชั่วคราวเพื่อหลีกเลี่ยง Error
-                    st.session_state.current_profile = None
+                    st.success(f'ลบ Profile "{profile_to_delete}" แล้ว')
+                    load_profile_to_ui()
                     st.rerun()
 
         st.write("---")
@@ -121,6 +113,7 @@ if check_password():
         
         if st.button("Create and Save Current Settings"):
             if new_profile_name and new_profile_name not in st.session_state.profiles:
+                # บันทึกค่าปัจจุบันจาก UI ลงโปรไฟล์ใหม่
                 st.session_state.profiles[new_profile_name] = {
                     'style': st.session_state.ui_style_instructions,
                     'script': st.session_state.ui_main_text,
@@ -128,29 +121,21 @@ if check_password():
                     'temp': st.session_state.ui_temperature,
                     'filename': st.session_state.ui_output_filename
                 }
-                st.success(f"Profile '{new_profile_name}' created! Please select it from the list.")
+                # [ปรับปรุง] ตั้งค่าสถานะเพื่อให้แอปเลือโปรไฟล์นี้ในรอบถัดไป
+                st.session_state.just_created_profile = new_profile_name
+                st.success(f"Profile '{new_profile_name}' created!")
                 st.rerun()
             else:
                 st.warning("Please enter a unique profile name.")
     
-    # โหลดค่า UI ครั้งแรกในกรณีที่เปิดหน้าเว็บหรือหลังการลบ
-    if st.session_state.current_profile is None and st.session_state.profiles:
-        st.session_state.current_profile = list(st.session_state.profiles.keys())[0]
-        load_profile_to_ui()
-
+    # --- ส่วน UI หลัก ---
     with st.container(border=True):
         st.subheader("1. ใส่สคริปต์และคำสั่ง")
         col1, col2 = st.columns(2)
         with col1:
-            style_instructions = st.text_area(
-                "Style Instructions:", height=250,
-                key='ui_style_instructions', on_change=save_ui_to_profile
-            )
+            st.text_area("Style Instructions:", height=250, key='ui_style_instructions', on_change=save_ui_to_profile)
         with col2:
-            main_text = st.text_area(
-                "Main Text (Script):", height=250,
-                key='ui_main_text', on_change=save_ui_to_profile
-            )
+            st.text_area("Main Text (Script):", height=250, key='ui_main_text', on_change=save_ui_to_profile)
 
     with st.container(border=True):
         st.subheader("2. ตั้งค่าเสียงและไฟล์")
@@ -162,35 +147,25 @@ if check_password():
                 voice_index = voice_display_list.index(st.session_state.ui_voice_select)
             except ValueError:
                 voice_index = 20
-            selected_voice_display = st.selectbox(
-                "เลือกเสียงพากย์:", options=voice_display_list, index=voice_index,
-                key='ui_voice_select', on_change=save_ui_to_profile
-            )
-            temperature = st.slider(
-                "Temperature (ความสร้างสรรค์ของเสียง):", min_value=0.0, max_value=2.0,
-                step=0.1, key='ui_temperature', on_change=save_ui_to_profile
-            )
+            st.selectbox("เลือกเสียงพากย์:", options=voice_display_list, index=voice_index, key='ui_voice_select', on_change=save_ui_to_profile)
+            st.slider("Temperature:", min_value=0.0, max_value=2.0, step=0.1, key='ui_temperature', on_change=save_ui_to_profile)
         with col4:
-            output_filename = st.text_input(
-                "ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):",
-                key='ui_output_filename', on_change=save_ui_to_profile
-            )
+            st.text_input("ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):", key='ui_output_filename', on_change=save_ui_to_profile)
 
     st.write("---")
 
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
-        if not main_text:
+        if not st.session_state.ui_main_text:
             st.warning("กรุณาใส่สคริปต์ในช่อง Main Text ก่อนครับ")
         else:
-            with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
+            with st.spinner("⏳ กำลังสร้างไฟล์เสียง..."):
                 try:
-                    voice_name_for_api = selected_voice_display.split(' - ')[0]
-                    temp_output_folder = "temp_output"
-                    ffmpeg_executable = "ffmpeg"
+                    voice_name_for_api = st.session_state.ui_voice_select.split(' - ')[0]
                     final_mp3_path = run_tts_generation(
-                        api_key=api_key, style_instructions=style_instructions, main_text=main_text,
-                        voice_name=voice_name_for_api, output_folder=temp_output_folder,
-                        output_filename=output_filename, temperature=temperature, ffmpeg_path=ffmpeg_executable
+                        api_key=api_key, style_instructions=st.session_state.ui_style_instructions,
+                        main_text=st.session_state.ui_main_text, voice_name=voice_name_for_api,
+                        output_folder="temp_output", output_filename=st.session_state.ui_output_filename,
+                        temperature=st.session_state.ui_temperature, ffmpeg_path="ffmpeg"
                     )
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
                     st.audio(final_mp3_path, format='audio/mp3')
