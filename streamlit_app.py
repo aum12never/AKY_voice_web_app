@@ -1,4 +1,4 @@
-# File: streamlit_app.py (พร้อมระบบโปรไฟล์)
+# File: streamlit_app.py (แก้ไข Error ตอนสร้างโปรไฟล์)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
@@ -29,7 +29,7 @@ def check_password():
     else:
         return True
 
-# --- [ใหม่] ฟังก์ชันสำหรับบันทึกค่าลงในโปรไฟล์ปัจจุบัน ---
+# --- ฟังก์ชันสำหรับบันทึกค่าลงในโปรไฟล์ปัจจุบัน ---
 def save_current_profile_settings():
     """บันทึกค่าจาก UI inputs ทั้งหมดลงใน st.session_state ของโปรไฟล์ปัจจุบัน"""
     profile_name = st.session_state.current_profile
@@ -49,7 +49,7 @@ st.write("---")
 # ตรวจสอบรหัสผ่านก่อนแสดงแอป
 if check_password():
 
-    # ตรวจสอบ API Key (เหมือนเดิม)
+    # ตรวจสอบ API Key
     try:
         api_key = st.secrets["GOOGLE_API_KEY"]
         if not api_key:
@@ -59,7 +59,7 @@ if check_password():
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
 
-    # --- [ใหม่] ตั้งค่าเริ่มต้นสำหรับระบบโปรไฟล์ ---
+    # ตั้งค่าเริ่มต้นสำหรับระบบโปรไฟล์
     if 'profiles' not in st.session_state:
         st.session_state.profiles = {
             "Default - Energetic": {
@@ -79,7 +79,7 @@ if check_password():
         }
         st.session_state.current_profile = "Default - Energetic"
 
-    # --- [ใหม่] ส่วนจัดการโปรไฟล์ใน Sidebar ---
+    # ส่วนจัดการโปรไฟล์ใน Sidebar
     with st.sidebar:
         st.header("👤 Profile Management")
         
@@ -104,15 +104,15 @@ if check_password():
                     "temp": st.session_state.ui_temperature,
                     "filename": st.session_state.ui_output_filename
                 }
-                st.session_state.current_profile = new_profile_name
-                st.success(f"Profile '{new_profile_name}' created!")
+                # บรรทัดที่ทำให้เกิด Error ถูกลบออกไปแล้ว
+                st.success(f"Profile '{new_profile_name}' created! Please select it from the list.")
                 st.rerun()
             else:
                 st.warning("Please enter a unique profile name.")
 
     current_settings = st.session_state.profiles[st.session_state.current_profile]
 
-    # --- เริ่มส่วน UI หลักของแอป ---
+    # เริ่มส่วน UI หลักของแอป
     with st.container(border=True):
         st.subheader("1. ใส่สคริปต์และคำสั่ง")
 
@@ -121,7 +121,7 @@ if check_password():
             style_instructions = st.text_area(
                 "Style Instructions:",
                 height=250,
-                value=current_settings.get('style', 'พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง เหมือนกำลังแนะนำสินค้าสุดพิเศษ'),
+                value=current_settings.get('style', ''),
                 key='ui_style_instructions',
                 on_change=save_current_profile_settings
             )
@@ -129,7 +129,7 @@ if check_password():
             main_text = st.text_area(
                 "Main Text (Script):",
                 height=250,
-                value=current_settings.get('script', 'ใส่สคริปต์หลักของคุณที่นี่...'),
+                value=current_settings.get('script', ''),
                 key='ui_main_text',
                 on_change=save_current_profile_settings
             )
@@ -173,7 +173,7 @@ if check_password():
 
     st.write("---")
 
-    # --- ปุ่ม Generate และส่วนแสดงผลลัพธ์ ---
+    # ปุ่ม Generate และส่วนแสดงผลลัพธ์
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
 
         if not main_text:
