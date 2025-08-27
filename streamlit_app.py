@@ -1,4 +1,4 @@
-# File: streamlit_app.py (แก้ไข Bug ตอนสร้างโปรไฟล์)
+# File: streamlit_app.py (แก้ไข Bug ตอนลบโปรไฟล์)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
@@ -36,6 +36,13 @@ def load_profile_to_ui():
         st.session_state.ui_voice_select = profile_data.get('voice', 'Achernar - Soft')
         st.session_state.ui_temperature = profile_data.get('temp', 0.9)
         st.session_state.ui_output_filename = profile_data.get('filename', 'my_voiceover')
+    else: # กรณีไม่มีโปรไฟล์เหลืออยู่ ให้เคลียร์ค่า UI
+        st.session_state.ui_style_instructions = ""
+        st.session_state.ui_main_text = ""
+        st.session_state.ui_voice_select = "Achernar - Soft"
+        st.session_state.ui_temperature = 0.9
+        st.session_state.ui_output_filename = "new_voice"
+
 
 # --- ฟังก์ชันสำหรับ "บันทึก" ค่าจาก UI กลับไปที่โปรไฟล์ ---
 def save_ui_to_profile():
@@ -78,6 +85,12 @@ if check_password():
         
         with col1:
             profile_options = list(st.session_state.profiles.keys())
+            
+            # [แก้ไข] ตรวจสอบว่า current_profile ยังมีอยู่จริงหรือไม่ ถ้าไม่ให้เลือกอันแรกแทน
+            if st.session_state.current_profile not in profile_options:
+                st.session_state.current_profile = profile_options[0] if profile_options else None
+                # ไม่ต้อง rerun แต่ปล่อยให้โค้ดทำงานต่อไปตามปกติ
+            
             if not profile_options:
                 st.caption("No profiles yet.")
             else:
@@ -91,25 +104,23 @@ if check_password():
         
         with col2:
             if st.session_state.current_profile:
+                # --- [แก้ไข] ตรรกะการลบโปรไฟล์ที่ถูกต้อง ---
                 if st.button("🗑️", key="delete_profile", help=f"Delete profile '{st.session_state.current_profile}'"):
                     profile_to_delete = st.session_state.current_profile
                     del st.session_state.profiles[profile_to_delete]
                     
-                    remaining_profiles = list(st.session_state.profiles.keys())
-                    st.session_state.current_profile = remaining_profiles[0] if remaining_profiles else None
-                    
                     st.success(f'ลบ Profile "{profile_to_delete}" แล้ว')
-                    load_profile_to_ui()
+                    
+                    # ตั้งค่า current_profile เป็น None ชั่วคราวเพื่อหลีกเลี่ยง Error
+                    st.session_state.current_profile = None
                     st.rerun()
 
         st.write("---")
         st.subheader("Create New Profile")
         new_profile_name = st.text_input("New profile name:", key="new_profile_name_input")
         
-        # --- [แก้ไข] ตรรกะการสร้างโปรไฟล์ที่ถูกต้อง ---
         if st.button("Create and Save Current Settings"):
             if new_profile_name and new_profile_name not in st.session_state.profiles:
-                # 1. สร้างโปรไฟล์ใหม่และบันทึกค่าจาก UI ลงไปโดยตรง
                 st.session_state.profiles[new_profile_name] = {
                     'style': st.session_state.ui_style_instructions,
                     'script': st.session_state.ui_main_text,
@@ -117,13 +128,16 @@ if check_password():
                     'temp': st.session_state.ui_temperature,
                     'filename': st.session_state.ui_output_filename
                 }
-                
-                # 2. แจ้งผู้ใช้และ rerun (ห้ามตั้งค่า current_profile ที่นี่)
                 st.success(f"Profile '{new_profile_name}' created! Please select it from the list.")
                 st.rerun()
             else:
                 st.warning("Please enter a unique profile name.")
     
+    # โหลดค่า UI ครั้งแรกในกรณีที่เปิดหน้าเว็บหรือหลังการลบ
+    if st.session_state.current_profile is None and st.session_state.profiles:
+        st.session_state.current_profile = list(st.session_state.profiles.keys())[0]
+        load_profile_to_ui()
+
     with st.container(border=True):
         st.subheader("1. ใส่สคริปต์และคำสั่ง")
         col1, col2 = st.columns(2)
