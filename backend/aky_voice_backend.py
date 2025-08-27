@@ -1,9 +1,10 @@
-# File: aky_voice_backend.py (Updated for Current Library)
+# File: aky_voice_backend.py (Fixed Import Version)
 # -*- coding: utf-8 -*-
 import os
 import struct
 import subprocess
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 def run_tts_generation(
     api_key: str, style_instructions: str, main_text: str, voice_name: str,
@@ -12,61 +13,63 @@ def run_tts_generation(
 ):
     """
     ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google AI Studio
-    ใช้ไลบรารีเวอร์ชันปัจจุบันที่ถูกต้อง
+    ใช้ไลบรารี google.genai และ google.genai.types
     """
     try:
-        # Configure the API key
-        genai.configure(api_key=api_key)
+        # สร้าง Client object
+        client = genai.Client(api_key=api_key)
         
-        # Create the model
-        model = genai.GenerativeModel('gemini-2.5-pro')
-        
-        # Prepare the prompt
+        # เตรียม prompt
         full_prompt = f"""
-        Style Instructions: {style_instructions}
+        {style_instructions}
         
-        Main Text: {main_text}
+        {main_text}
         """
         
-        # Generate content with speech
-        response = model.generate_content(
-            full_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=temperature,
-                response_modalities=['audio'],
-                speech_config=genai.types.SpeechConfig(
-                    voice_config=genai.types.VoiceConfig(
-                        prebuilt_voice_config=genai.types.PrebuiltVoiceConfig(
-                            voice_name=voice_name
-                        )
+        # สร้าง config object ด้วย types จาก google.genai
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=voice_name
                     )
                 )
             )
         )
         
+        # สร้างเส้นทางไฟล์
         wav_path, mp3_path = determine_output_paths(output_folder, output_filename)
         
-        # Extract audio data
-        if hasattr(response, 'candidates') and response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, 'content') and candidate.content:
-                for part in candidate.content.parts:
-                    if hasattr(part, 'inline_data') and part.inline_data:
-                        audio_data = part.inline_data.data
-                        
-                        # Convert to WAV format
-                        final_wav_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
-                        save_binary_file(wav_path, final_wav_data)
-                        
-                        # Convert to MP3
-                        convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
-                        
-                        # Clean up temporary WAV file
-                        os.remove(wav_path)
-                        
-                        return mp3_path
+        # เรียกใช้ API
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=full_prompt,
+            config=config
+        )
         
-        raise ValueError("No audio data received from the API.")
+        # ดึงข้อมูลเสียงจาก response
+        if (response.candidates and 
+            response.candidates[0].content and 
+            response.candidates[0].content.parts and
+            response.candidates[0].content.parts[0].inline_data):
+            
+            audio_data = response.candidates[0].content.parts[0].inline_data.data
+            
+            # แปลงเป็น WAV format
+            final_wav_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
+            save_binary_file(wav_path, final_wav_data)
+            
+            # แปลงเป็น MP3
+            convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
+            
+            # ลบไฟล์ temporary WAV 
+            os.remove(wav_path)
+            
+            return mp3_path
+        else:
+            raise ValueError("No audio data received from the API.")
         
     except Exception as e:
         raise ValueError(f"Backend Error: {str(e)}")
