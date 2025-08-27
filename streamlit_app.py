@@ -1,11 +1,11 @@
-# File: streamlit_app.py (เพิ่มฟังก์ชันลบโปรไฟล์)
+# File: streamlit_app.py (UI ลบโปรไฟล์แบบใหม่)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
 from backend.aky_voice_backend import run_tts_generation
 import time
 
-# --- ฟังก์ชันสำหรับตรวจสอบรหัสผ่าน (เหมือนเดิม) ---
+# --- ฟังก์ชันสำหรับตรวจสอบรหัสผ่าน ---
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
@@ -33,7 +33,7 @@ def check_password():
 def save_current_profile_settings():
     """บันทึกค่าจาก UI inputs ทั้งหมดลงใน st.session_state ของโปรไฟล์ปัจจุบัน"""
     profile_name = st.session_state.current_profile
-    if profile_name in st.session_state.profiles:
+    if profile_name and profile_name in st.session_state.profiles:
         st.session_state.profiles[profile_name]['style'] = st.session_state.ui_style_instructions
         st.session_state.profiles[profile_name]['script'] = st.session_state.ui_main_text
         st.session_state.profiles[profile_name]['voice'] = st.session_state.ui_voice_select
@@ -59,57 +59,46 @@ if check_password():
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
 
-    # ตั้งค่าเริ่มต้นสำหรับระบบโปรไฟล์
+    # --- [แก้ไข] ตั้งค่าเริ่มต้นสำหรับระบบโปรไฟล์ (ไม่มี Default) ---
     if 'profiles' not in st.session_state:
-        st.session_state.profiles = {
-            "Default - Energetic": {
-                "style": "พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง เหมือนกำลังแนะนำสินค้าสุดพิเศษ",
-                "script": "สวัสดีครับ! วันนี้เรามีสินค้าใหม่ล่าสุดมานำเสนอ...",
-                "voice": "Puck - Upbeat",
-                "temp": 1.1,
-                "filename": "energetic_voiceover"
-            },
-            "Default - Calm Informative": {
-                "style": "พูดด้วยน้ำเสียงสงบ น่าเชื่อถือ ให้ข้อมูลอย่างตรงไปตรงมา",
-                "script": "จากการวิจัยพบว่าผลิตภัณฑ์ของเรามีส่วนช่วยในการ...",
-                "voice": "Charon - Informative",
-                "temp": 0.7,
-                "filename": "calm_voiceover"
-            }
-        }
-        st.session_state.current_profile = "Default - Energetic"
+        st.session_state.profiles = {}
+        st.session_state.current_profile = None
 
-    # ส่วนจัดการโปรไฟล์ใน Sidebar
+    # --- [แก้ไข] ส่วนจัดการโปรไฟล์ใน Sidebar ---
     with st.sidebar:
         st.header("👤 Profile Management")
-        
-        profile_options = list(st.session_state.profiles.keys())
-        
-        selected_profile = st.selectbox(
-            "Select Profile:",
-            options=profile_options,
-            key='current_profile'
-        )
-        
-        # --- [ใหม่] ส่วนของการลบโปรไฟล์ ---
         st.write("---")
-        st.subheader("Delete Profile")
-        
-        profile_to_delete = st.session_state.current_profile
-        is_default_profile = profile_to_delete.startswith("Default - ")
 
-        if is_default_profile:
-            st.warning("Default profiles cannot be deleted.")
-        else:
-            if st.button(f"🗑️ Delete Profile: '{profile_to_delete}'"):
+        # --- [ใหม่] UI สำหรับเลือกและลบโปรไฟล์ ---
+        st.subheader("Select Profile")
+        profile_options = list(st.session_state.profiles.keys())
+
+        if not profile_options:
+            st.caption("No profiles found. Please create one below.")
+
+        for profile_name in profile_options:
+            col1, col2 = st.columns([0.8, 0.2])
+            
+            # ปุ่มสำหรับเลือกโปรไฟล์
+            button_type = "primary" if st.session_state.current_profile == profile_name else "secondary"
+            if col1.button(profile_name, use_container_width=True, type=button_type):
+                st.session_state.current_profile = profile_name
+                st.rerun()
+
+            # ปุ่มสำหรับลบโปรไฟล์
+            if col2.button(f"🗑️", key=f"delete_{profile_name}", use_container_width=True):
+                profile_to_delete = profile_name
                 del st.session_state.profiles[profile_to_delete]
-                # หลังจากลบ ให้กลับไปเลือกโปรไฟล์แรกเป็นค่าเริ่มต้น
-                st.session_state.current_profile = list(st.session_state.profiles.keys())[0]
-                st.success(f"Profile '{profile_to_delete}' was deleted.")
+                
+                # ถ้าโปรไฟล์ที่ลบคือโปรไฟล์ที่กำลังเลือกอยู่ ให้เลือกโปรไฟล์อื่นแทน
+                if st.session_state.current_profile == profile_to_delete:
+                    remaining_profiles = list(st.session_state.profiles.keys())
+                    st.session_state.current_profile = remaining_profiles[0] if remaining_profiles else None
+                
+                st.success(f'ลบ Profile "{profile_to_delete}" แล้ว')
                 st.rerun()
 
         st.write("---")
-
         st.subheader("Create New Profile")
         new_profile_name = st.text_input("New profile name:", key="new_profile_name_input")
         if st.button("Create and Save Current Settings"):
@@ -121,33 +110,36 @@ if check_password():
                     "temp": st.session_state.ui_temperature,
                     "filename": st.session_state.ui_output_filename
                 }
-                st.success(f"Profile '{new_profile_name}' created! Please select it from the list.")
+                # หลังจากสร้าง ให้เลือกเป็นโปรไฟล์ปัจจุบันเลย
+                st.session_state.current_profile = new_profile_name
+                st.success(f"Profile '{new_profile_name}' created!")
                 st.rerun()
             else:
                 st.warning("Please enter a unique profile name.")
+    
+    # --- [แก้ไข] จัดการกรณีที่ไม่มีโปรไฟล์ ---
+    if st.session_state.current_profile and st.session_state.current_profile in st.session_state.profiles:
+        current_settings = st.session_state.profiles[st.session_state.current_profile]
+    else:
+        # สร้างโปรไฟล์ว่างๆ เพื่อไม่ให้แอปพัง
+        current_settings = {
+            "style": "", "script": "", "voice": "Achernar - Soft", "temp": 0.9, "filename": "new_voice"
+        }
 
-    current_settings = st.session_state.profiles[st.session_state.current_profile]
-
-    # เริ่มส่วน UI หลักของแอป
+    # --- เริ่มส่วน UI หลักของแอป ---
     with st.container(border=True):
         st.subheader("1. ใส่สคริปต์และคำสั่ง")
 
         col1, col2 = st.columns(2)
         with col1:
             style_instructions = st.text_area(
-                "Style Instructions:",
-                height=250,
-                value=current_settings.get('style', ''),
-                key='ui_style_instructions',
-                on_change=save_current_profile_settings
+                "Style Instructions:", height=250, value=current_settings.get('style', ''),
+                key='ui_style_instructions', on_change=save_current_profile_settings
             )
         with col2:
             main_text = st.text_area(
-                "Main Text (Script):",
-                height=250,
-                value=current_settings.get('script', ''),
-                key='ui_main_text',
-                on_change=save_current_profile_settings
+                "Main Text (Script):", height=250, value=current_settings.get('script', ''),
+                key='ui_main_text', on_change=save_current_profile_settings
             )
 
     with st.container(border=True):
@@ -164,34 +156,24 @@ if check_password():
                 voice_index = 20
 
             selected_voice_display = st.selectbox(
-                "เลือกเสียงพากย์:",
-                options=voice_display_list,
-                index=voice_index,
-                key='ui_voice_select',
-                on_change=save_current_profile_settings
+                "เลือกเสียงพากย์:", options=voice_display_list, index=voice_index,
+                key='ui_voice_select', on_change=save_current_profile_settings
             )
-
             temperature = st.slider(
-                "Temperature (ความสร้างสรรค์ของเสียง):",
-                min_value=0.0, max_value=2.0,
-                value=current_settings.get('temp', 0.9),
-                step=0.1,
-                key='ui_temperature',
-                on_change=save_current_profile_settings
+                "Temperature (ความสร้างสรรค์ของเสียง):", min_value=0.0, max_value=2.0,
+                value=current_settings.get('temp', 0.9), step=0.1,
+                key='ui_temperature', on_change=save_current_profile_settings
             )
         with col4:
             output_filename = st.text_input(
-                "ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):",
-                value=current_settings.get('filename', 'my_voiceover'),
-                key='ui_output_filename',
-                on_change=save_current_profile_settings
+                "ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):", value=current_settings.get('filename', 'my_voiceover'),
+                key='ui_output_filename', on_change=save_current_profile_settings
             )
 
     st.write("---")
 
     # ปุ่ม Generate และส่วนแสดงผลลัพธ์
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
-
         if not main_text:
             st.warning("กรุณาใส่สคริปต์ในช่อง Main Text ก่อนครับ")
         else:
@@ -200,28 +182,18 @@ if check_password():
                     voice_name_for_api = selected_voice_display.split(' - ')[0]
                     temp_output_folder = "temp_output"
                     ffmpeg_executable = "ffmpeg"
-
                     final_mp3_path = run_tts_generation(
-                        api_key=api_key,
-                        style_instructions=style_instructions,
-                        main_text=main_text,
-                        voice_name=voice_name_for_api,
-                        output_folder=temp_output_folder,
-                        output_filename=output_filename,
-                        temperature=temperature,
-                        ffmpeg_path=ffmpeg_executable
+                        api_key=api_key, style_instructions=style_instructions, main_text=main_text,
+                        voice_name=voice_name_for_api, output_folder=temp_output_folder,
+                        output_filename=output_filename, temperature=temperature, ffmpeg_path=ffmpeg_executable
                     )
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
                     st.audio(final_mp3_path, format='audio/mp3')
-
                     with open(final_mp3_path, "rb") as file:
                         st.download_button(
-                            label="📥 ดาวน์โหลดไฟล์ MP3",
-                            data=file,
-                            file_name=os.path.basename(final_mp3_path),
-                            mime="audio/mp3",
+                            label="📥 ดาวน์โหลดไฟล์ MP3", data=file,
+                            file_name=os.path.basename(final_mp3_path), mime="audio/mp3",
                             use_container_width=True
                         )
-
                 except Exception as e:
                     st.error(f"เกิดข้อผิดพลาด: {e}")
