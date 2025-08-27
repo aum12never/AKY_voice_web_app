@@ -1,4 +1,4 @@
-# File: streamlit_app.py (แก้ไข Bug และปรับ UI Dropdown + Delete)
+# File: streamlit_app.py (แก้ไข Bug ตอนสร้างโปรไฟล์)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
@@ -25,7 +25,7 @@ def check_password():
     else:
         return True
 
-# --- [ใหม่] ฟังก์ชันสำหรับ "โหลด" ค่าจากโปรไฟล์มาแสดงบน UI ---
+# --- ฟังก์ชันสำหรับ "โหลด" ค่าจากโปรไฟล์มาแสดงบน UI ---
 def load_profile_to_ui():
     """โหลดค่าจากโปรไฟล์ที่เลือกใน st.session_state.current_profile มาใส่ใน State ของ UI"""
     profile_name = st.session_state.current_profile
@@ -37,7 +37,7 @@ def load_profile_to_ui():
         st.session_state.ui_temperature = profile_data.get('temp', 0.9)
         st.session_state.ui_output_filename = profile_data.get('filename', 'my_voiceover')
 
-# --- [แก้ไข] ฟังก์ชันสำหรับ "บันทึก" ค่าจาก UI กลับไปที่โปรไฟล์ ---
+# --- ฟังก์ชันสำหรับ "บันทึก" ค่าจาก UI กลับไปที่โปรไฟล์ ---
 def save_ui_to_profile():
     """บันทึกค่าจาก State ของ UI กลับไปที่โปรไฟล์ที่กำลังเลือกอยู่"""
     profile_name = st.session_state.current_profile
@@ -54,25 +54,21 @@ st.title("🎙️ Affiliate Voice Generator Pro AKY VVVV")
 st.write("---")
 
 if check_password():
-    # ตรวจสอบ API Key
     try:
         api_key = st.secrets["GOOGLE_API_KEY"]
     except KeyError:
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
 
-    # --- [แก้ไข] ตั้งค่าเริ่มต้นสำหรับ State ทั้งหมด ---
     if 'profiles' not in st.session_state:
         st.session_state.profiles = {}
         st.session_state.current_profile = None
-        # ตั้งค่าเริ่มต้นให้ State ของ UI ด้วย
         st.session_state.ui_style_instructions = ""
         st.session_state.ui_main_text = ""
         st.session_state.ui_voice_select = "Achernar - Soft"
         st.session_state.ui_temperature = 0.9
         st.session_state.ui_output_filename = "new_voice"
 
-    # --- [แก้ไข] ส่วนจัดการโปรไฟล์ใน Sidebar ---
     with st.sidebar:
         st.header("👤 Profile Management")
         st.write("---")
@@ -89,7 +85,7 @@ if check_password():
                     "Select Profile:",
                     options=profile_options,
                     key='current_profile',
-                    on_change=load_profile_to_ui, # เมื่อเลือกโปรไฟล์ใหม่ ให้เรียกฟังก์ชัน "โหลด"
+                    on_change=load_profile_to_ui,
                     label_visibility="collapsed"
                 )
         
@@ -103,25 +99,31 @@ if check_password():
                     st.session_state.current_profile = remaining_profiles[0] if remaining_profiles else None
                     
                     st.success(f'ลบ Profile "{profile_to_delete}" แล้ว')
-                    load_profile_to_ui() # โหลดโปรไฟล์ใหม่ (หรือค่าว่าง) ทันที
+                    load_profile_to_ui()
                     st.rerun()
 
         st.write("---")
         st.subheader("Create New Profile")
         new_profile_name = st.text_input("New profile name:", key="new_profile_name_input")
+        
+        # --- [แก้ไข] ตรรกะการสร้างโปรไฟล์ที่ถูกต้อง ---
         if st.button("Create and Save Current Settings"):
             if new_profile_name and new_profile_name not in st.session_state.profiles:
-                st.session_state.profiles[new_profile_name] = {} # สร้างโปรไฟล์ว่างก่อน
-                st.session_state.current_profile = new_profile_name
-                save_ui_to_profile() # บันทึกค่าปัจจุบันจาก UI ลงไป
-                st.success(f"Profile '{new_profile_name}' created!")
+                # 1. สร้างโปรไฟล์ใหม่และบันทึกค่าจาก UI ลงไปโดยตรง
+                st.session_state.profiles[new_profile_name] = {
+                    'style': st.session_state.ui_style_instructions,
+                    'script': st.session_state.ui_main_text,
+                    'voice': st.session_state.ui_voice_select,
+                    'temp': st.session_state.ui_temperature,
+                    'filename': st.session_state.ui_output_filename
+                }
+                
+                # 2. แจ้งผู้ใช้และ rerun (ห้ามตั้งค่า current_profile ที่นี่)
+                st.success(f"Profile '{new_profile_name}' created! Please select it from the list.")
                 st.rerun()
             else:
                 st.warning("Please enter a unique profile name.")
     
-    # --- [แก้ไข] ไม่ต้องมี current_settings อีกต่อไป เพราะเราใช้ State ของ UI โดยตรง ---
-
-    # --- เริ่มส่วน UI หลักของแอป ---
     with st.container(border=True):
         st.subheader("1. ใส่สคริปต์และคำสั่ง")
         col1, col2 = st.columns(2)
@@ -145,7 +147,7 @@ if check_password():
             try:
                 voice_index = voice_display_list.index(st.session_state.ui_voice_select)
             except ValueError:
-                voice_index = 20 # Achernar - Soft
+                voice_index = 20
             selected_voice_display = st.selectbox(
                 "เลือกเสียงพากย์:", options=voice_display_list, index=voice_index,
                 key='ui_voice_select', on_change=save_ui_to_profile
@@ -161,7 +163,7 @@ if check_password():
             )
 
     st.write("---")
-    # (ส่วนปุ่ม Generate และการทำงานเหมือนเดิมทุกประการ)
+
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
         if not main_text:
             st.warning("กรุณาใส่สคริปต์ในช่อง Main Text ก่อนครับ")
