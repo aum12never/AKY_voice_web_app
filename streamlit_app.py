@@ -1,4 +1,4 @@
-# File: streamlit_app.py (แก้ไข Error ตอนสร้างโปรไฟล์)
+# File: streamlit_app.py (เพิ่มฟังก์ชันลบโปรไฟล์)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
@@ -90,6 +90,23 @@ if check_password():
             options=profile_options,
             key='current_profile'
         )
+        
+        # --- [ใหม่] ส่วนของการลบโปรไฟล์ ---
+        st.write("---")
+        st.subheader("Delete Profile")
+        
+        profile_to_delete = st.session_state.current_profile
+        is_default_profile = profile_to_delete.startswith("Default - ")
+
+        if is_default_profile:
+            st.warning("Default profiles cannot be deleted.")
+        else:
+            if st.button(f"🗑️ Delete Profile: '{profile_to_delete}'"):
+                del st.session_state.profiles[profile_to_delete]
+                # หลังจากลบ ให้กลับไปเลือกโปรไฟล์แรกเป็นค่าเริ่มต้น
+                st.session_state.current_profile = list(st.session_state.profiles.keys())[0]
+                st.success(f"Profile '{profile_to_delete}' was deleted.")
+                st.rerun()
 
         st.write("---")
 
@@ -104,7 +121,6 @@ if check_password():
                     "temp": st.session_state.ui_temperature,
                     "filename": st.session_state.ui_output_filename
                 }
-                # บรรทัดที่ทำให้เกิด Error ถูกลบออกไปแล้ว
                 st.success(f"Profile '{new_profile_name}' created! Please select it from the list.")
                 st.rerun()
             else:
