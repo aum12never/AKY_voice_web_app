@@ -1,13 +1,11 @@
-# File: streamlit_app.py
+# File: streamlit_app.py (พร้อมระบบโปรไฟล์)
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
 from backend.aky_voice_backend import run_tts_generation
-import time  # Import time library for unique filenames
+import time
 
 # --- ฟังก์ชันสำหรับตรวจสอบรหัสผ่าน (เหมือนเดิม) ---
-
-
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
@@ -31,17 +29,27 @@ def check_password():
     else:
         return True
 
+# --- [ใหม่] ฟังก์ชันสำหรับบันทึกค่าลงในโปรไฟล์ปัจจุบัน ---
+def save_current_profile_settings():
+    """บันทึกค่าจาก UI inputs ทั้งหมดลงใน st.session_state ของโปรไฟล์ปัจจุบัน"""
+    profile_name = st.session_state.current_profile
+    if profile_name != "Select a Profile":
+        st.session_state.profiles[profile_name]['style'] = st.session_state.ui_style_instructions
+        st.session_state.profiles[profile_name]['script'] = st.session_state.ui_main_text
+        st.session_state.profiles[profile_name]['voice'] = st.session_state.ui_voice_select
+        st.session_state.profiles[profile_name]['temp'] = st.session_state.ui_temperature
+        st.session_state.profiles[profile_name]['filename'] = st.session_state.ui_output_filename
 
 # --- ส่วนแสดงผลหลักของแอป ---
-st.set_page_config(page_title="Affiliate Voice Generator AKYYY", layout="wide")
+st.set_page_config(page_title="Affiliate Voice Generator", layout="wide")
 
-st.title("🎙️ Affiliate Voice Generator Pro AKY VVVV")
+st.title("🎙️ Affiliate Voice Generator Pro")
 st.write("---")
 
 # ตรวจสอบรหัสผ่านก่อนแสดงแอป
 if check_password():
 
-    # ตรวจสอบว่าได้ตั้งค่า API Key ใน Secrets แล้วหรือยัง
+    # ตรวจสอบ API Key (เหมือนเดิม)
     try:
         api_key = st.secrets["GOOGLE_API_KEY"]
         if not api_key:
@@ -50,6 +58,64 @@ if check_password():
     except KeyError:
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
+    
+    # --- [ใหม่] ตั้งค่าเริ่มต้นสำหรับระบบโปรไฟล์ ---
+    if 'profiles' not in st.session_state:
+        # สร้างโปรไฟล์เริ่มต้น
+        st.session_state.profiles = {
+            "Default - Energetic": {
+                "style": "พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง เหมือนกำลังแนะนำสินค้าสุดพิเศษ",
+                "script": "สวัสดีครับ! วันนี้เรามีสินค้าใหม่ล่าสุดมานำเสนอ...",
+                "voice": "Puck - Upbeat",
+                "temp": 1.1,
+                "filename": "energetic_voiceover"
+            },
+            "Default - Calm Informative": {
+                "style": "พูดด้วยน้ำเสียงสงบ น่าเชื่อถือ ให้ข้อมูลอย่างตรงไปตรงมา",
+                "script": "จากการวิจัยพบว่าผลิตภัณฑ์ของเรามีส่วนช่วยในการ...",
+                "voice": "Charon - Informative",
+                "temp": 0.7,
+                "filename": "calm_voiceover"
+            }
+        }
+        st.session_state.current_profile = "Default - Energetic" # โปรไฟล์ที่เลือกตอนเริ่ม
+
+    # --- [ใหม่] ส่วนจัดการโปรไฟล์ใน Sidebar ---
+    with st.sidebar:
+        st.header("👤 Profile Management")
+        
+        # สร้าง قائمةโปรไฟล์ให้เลือก + ตัวเลือกสำหรับไม่ใช้โปรไฟล์
+        profile_options = list(st.session_state.profiles.keys())
+        
+        # ทำให้ st.selectbox อัปเดตเมื่อมีโปรไฟล์ใหม่
+        selected_profile = st.selectbox(
+            "Select Profile:",
+            options=profile_options,
+            key='current_profile' # ใช้ key เดียวกับ st.session_state
+        )
+
+        st.write("---")
+
+        st.subheader("Create New Profile")
+        new_profile_name = st.text_input("New profile name:")
+        if st.button("Create and Save Current Settings"):
+            if new_profile_name and new_profile_name not in st.session_state.profiles:
+                # สร้างโปรไฟล์ใหม่โดยใช้ค่าปัจจุบันจากหน้าจอ
+                st.session_state.profiles[new_profile_name] = {
+                    "style": st.session_state.ui_style_instructions,
+                    "script": st.session_state.ui_main_text,
+                    "voice": st.session_state.ui_voice_select,
+                    "temp": st.session_state.ui_temperature,
+                    "filename": st.session_state.ui_output_filename
+                }
+                st.session_state.current_profile = new_profile_name
+                st.success(f"Profile '{new_profile_name}' created!")
+                st.rerun() # สั่งให้ UI โหลดใหม่เพื่อแสดงโปรไฟล์ใหม่ใน dropdown
+            else:
+                st.warning("Please enter a unique profile name.")
+
+    # ดึงค่าของโปรไฟล์ที่ถูกเลือกมาใช้
+    current_settings = st.session_state.profiles[st.session_state.current_profile]
 
     # --- เริ่มส่วน UI หลักของแอป ---
     with st.container(border=True):
@@ -60,13 +126,17 @@ if check_password():
             style_instructions = st.text_area(
                 "Style Instructions:",
                 height=250,
-                placeholder="ตัวอย่าง: พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง เหมือนกำลังแนะนำสินค้าสุดพิเศษ"
+                value=current_settings['style'],
+                key='ui_style_instructions', # เพิ่ม key เพื่อให้ callback ทำงาน
+                on_change=save_current_profile_settings
             )
         with col2:
             main_text = st.text_area(
                 "Main Text (Script):",
                 height=250,
-                placeholder="ใส่สคริปต์หลักของคุณที่นี่..."
+                value=current_settings['script'],
+                key='ui_main_text',
+                on_change=save_current_profile_settings
             )
 
     with st.container(border=True):
@@ -74,37 +144,43 @@ if check_password():
 
         col3, col4 = st.columns(2)
         with col3:
-            # รายชื่อเสียง (เหมือนในแอปเดิม)
-            gemini_voices_data = {"Zephyr": "Bright", "Puck": "Upbeat", "Charon": "Informative", "Kore": "Firm", "Fenrir": "Excitable", "Leda": "Youthful", "Orus": "Firm", "Aoede": "Breezy", "Callirrhoe": "Easy-going", "Autonoe": "Bright", "Enceladus": "Breathy", "Iapetus": "Clear", "Umbriel": "Easy-going", "Algieba": "Smooth", "Despina": "Smooth",
-                                  "Erinome": "Clear", "Algenib": "Gravelly", "Rasalgethi": "Informative", "Laomedeia": "Upbeat", "Achernar": "Soft", "Alnilam": "Firm", "Schedar": "Even", "Gacrux": "Mature", "Pulcherrima": "Forward", "Achird": "Friendly", "Zubenelgenubi": "Casual", "Vindemiatrix": "Gentle", "Sadachbia": "Lively", "Sadaltager": "Knowledgeable", "Sulafat": "Warm"}
-            voice_display_list = sorted(
-                [f"{name} - {desc}" for name, desc in gemini_voices_data.items()])
+            gemini_voices_data = {"Zephyr": "Bright", "Puck": "Upbeat", "Charon": "Informative", "Kore": "Firm", "Fenrir": "Excitable", "Leda": "Youthful", "Orus": "Firm", "Aoede": "Breezy", "Callirrhoe": "Easy-going", "Autonoe": "Bright", "Enceladus": "Breathy", "Iapetus": "Clear", "Umbriel": "Easy-going", "Algieba": "Smooth", "Despina": "Smooth", "Erinome": "Clear", "Algenib": "Gravelly", "Rasalgethi": "Informative", "Laomedeia": "Upbeat", "Achernar": "Soft", "Alnilam": "Firm", "Schedar": "Even", "Gacrux": "Mature", "Pulcherrima": "Forward", "Achird": "Friendly", "Zubenelgenubi": "Casual", "Vindemiatrix": "Gentle", "Sadachbia": "Lively", "Sadaltager": "Knowledgeable", "Sulafat": "Warm"}
+            voice_display_list = sorted([f"{name} - {desc}" for name, desc in gemini_voices_data.items()])
+            
+            # หา index ของ voice ที่บันทึกไว้
+            try:
+                voice_index = voice_display_list.index(current_settings['voice'])
+            except ValueError:
+                voice_index = 0 # ถ้าไม่เจอก็เอาอันแรก
 
             selected_voice_display = st.selectbox(
                 "เลือกเสียงพากย์:",
                 options=voice_display_list,
-                index=20  # ตั้งค่าเริ่มต้นเป็น Achernar - Soft
+                index=voice_index,
+                key='ui_voice_select',
+                on_change=save_current_profile_settings
             )
 
             temperature = st.slider(
                 "Temperature (ความสร้างสรรค์ของเสียง):",
-                min_value=0.0,
-                max_value=2.0,
-                value=0.9,
-                step=0.1
+                min_value=0.0, max_value=2.0,
+                value=current_settings['temp'],
+                step=0.1,
+                key='ui_temperature',
+                on_change=save_current_profile_settings
             )
-
         with col4:
             output_filename = st.text_input(
                 "ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):",
-                value="my_voiceover"
+                value=current_settings['filename'],
+                key='ui_output_filename',
+                on_change=save_current_profile_settings
             )
 
     st.write("---")
 
     # --- ปุ่ม Generate และส่วนแสดงผลลัพธ์ ---
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
-
         if not main_text:
             st.warning("กรุณาใส่สคริปต์ในช่อง Main Text ก่อนครับ")
         else:
@@ -112,9 +188,11 @@ if check_password():
                 try:
                     voice_name_for_api = selected_voice_display.split(' - ')[0]
                     temp_output_folder = "temp_output"
+                    
+                    # บน Streamlit Cloud ให้ใช้ 'ffmpeg' ตรงๆ
+                    # บน Windows Local Test ให้ใช้ 'ffmpeg.exe'
+                    ffmpeg_executable = "ffmpeg" 
 
-                    # [แก้ไข] เรียกใช้ Backend และรับค่า path ของไฟล์ที่เสร็จแล้วกลับมา
-                    # สำหรับการทดสอบบน Windows เราจะเรียกใช้ ffmpeg.exe ที่อยู่ในโฟลเดอร์เดียวกัน
                     final_mp3_path = run_tts_generation(
                         api_key=api_key,
                         style_instructions=style_instructions,
@@ -123,9 +201,8 @@ if check_password():
                         output_folder=temp_output_folder,
                         output_filename=output_filename,
                         temperature=temperature,
-                        ffmpeg_path="ffmpeg"  # <--- แก้ไขตรงนี้
+                        ffmpeg_path=ffmpeg_executable
                     )
-
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
                     st.audio(final_mp3_path, format='audio/mp3')
 
@@ -137,11 +214,5 @@ if check_password():
                             mime="audio/mp3",
                             use_container_width=True
                         )
-
                 except Exception as e:
-                    # ตอนนี้จะแสดง Error ที่แท้จริงจาก Backend แล้ว
                     st.error(f"เกิดข้อผิดพลาด: {e}")
-
-
-
-
