@@ -2,16 +2,29 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import os
+import json
 from backend.aky_voice_backend import run_tts_generation
 import time
 from typing import Dict, Any
+from pathlib import Path
 
-# --- ฟังก์ชันจัดการ Profile ---
-def initialize_profiles():
-    """สร้าง Session State สำหรับเก็บข้อมูล Profiles"""
-    if 'profiles' not in st.session_state:
-        # สร้าง Profile เริ่มต้น
-        st.session_state.profiles = {
+# --- Configuration ---
+PROFILES_FILE = "profiles_data.json"
+
+# --- Persistent Storage Functions ---
+def load_profiles_from_file() -> Dict:
+    """โหลดข้อมูล Profiles จากไฟล์ JSON"""
+    try:
+        if os.path.exists(PROFILES_FILE):
+            with open(PROFILES_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data
+    except Exception as e:
+        st.warning(f"Could not load profiles: {e}")
+    
+    # Return default if file doesn't exist or error
+    return {
+        'profiles': {
             'Default': {
                 'style_instructions': '',
                 'main_text': '',
@@ -19,14 +32,39 @@ def initialize_profiles():
                 'temperature': 0.9,
                 'filename': 'my_voiceover'
             }
-        }
+        },
+        'last_profile': 'Default'
+    }
+
+def save_profiles_to_file(data: Dict):
+    """บันทึกข้อมูล Profiles ลงไฟล์ JSON"""
+    try:
+        with open(PROFILES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Could not save profiles: {e}")
+        return False
+
+# --- Profile Management Functions ---
+def initialize_profiles():
+    """สร้าง Session State สำหรับเก็บข้อมูล Profiles"""
+    # โหลดข้อมูลจากไฟล์
+    saved_data = load_profiles_from_file()
+    
+    if 'profiles' not in st.session_state:
+        st.session_state.profiles = saved_data['profiles']
     
     if 'current_profile' not in st.session_state:
-        st.session_state.current_profile = 'Default'
+        st.session_state.current_profile = saved_data.get('last_profile', 'Default')
     
     # Initialize tracking for auto-save
     if 'last_saved_values' not in st.session_state:
         st.session_state.last_saved_values = {}
+    
+    # Flag to track if data needs saving
+    if 'data_changed' not in st.session_state:
+        st.session_state.data_changed = False
 
 def get_current_profile_data() -> Dict[str, Any]:
     """ดึงข้อมูลของ Profile ปัจจุบัน"""
@@ -36,9 +74,16 @@ def get_current_profile_data() -> Dict[str, Any]:
     )
 
 def save_to_current_profile(field: str, value: Any):
-    """บันทึกค่าไปยัง Profile ปัจจุบัน"""
+    """บันทึกค่าไปยัง Profile ปัจจุบันและบันทึกลงไฟล์"""
     if st.session_state.current_profile in st.session_state.profiles:
         st.session_state.profiles[st.session_state.current_profile][field] = value
+        
+        # บันทึกลงไฟล์ทันที
+        data_to_save = {
+            'profiles': st.session_state.profiles,
+            'last_profile': st.session_state.current_profile
+        }
+        save_profiles_to_file(data_to_save)
 
 def create_new_profile(profile_name: str) -> bool:
     """สร้าง Profile ใหม่"""
@@ -55,6 +100,14 @@ def create_new_profile(profile_name: str) -> bool:
     current_data = get_current_profile_data()
     st.session_state.profiles[profile_name] = current_data.copy()
     st.session_state.current_profile = profile_name
+    
+    # บันทึกลงไฟล์
+    data_to_save = {
+        'profiles': st.session_state.profiles,
+        'last_profile': st.session_state.current_profile
+    }
+    save_profiles_to_file(data_to_save)
+    
     return True
 
 def delete_profile(profile_name: str) -> bool:
@@ -68,14 +121,28 @@ def delete_profile(profile_name: str) -> bool:
     if st.session_state.current_profile == profile_name:
         st.session_state.current_profile = 'Default'
     
+    # บันทึกลงไฟล์
+    data_to_save = {
+        'profiles': st.session_state.profiles,
+        'last_profile': st.session_state.current_profile
+    }
+    save_profiles_to_file(data_to_save)
+    
     return True
 
 def switch_profile(profile_name: str):
     """สลับไปยัง Profile อื่น"""
     if profile_name in st.session_state.profiles:
         st.session_state.current_profile = profile_name
+        
+        # บันทึก profile ล่าสุดลงไฟล์
+        data_to_save = {
+            'profiles': st.session_state.profiles,
+            'last_profile': st.session_state.current_profile
+        }
+        save_profiles_to_file(data_to_save)
 
-# --- ฟังก์ชันสำหรับ Auto-save ---
+# --- Auto-save Function ---
 def auto_save_field(field_name: str, value: Any):
     """บันทึกค่าอัตโนมัติเมื่อมีการเปลี่ยนแปลง"""
     current_key = f"{st.session_state.current_profile}_{field_name}"
@@ -85,7 +152,7 @@ def auto_save_field(field_name: str, value: Any):
         save_to_current_profile(field_name, value)
         st.session_state.last_saved_values[current_key] = value
 
-# --- ฟังก์ชันสำหรับตรวจสอบรหัสผ่าน ---
+# --- Password Check Function ---
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
@@ -109,7 +176,7 @@ def check_password():
     else:
         return True
 
-# --- ส่วนแสดงผลหลักของแอป ---
+# --- Main App ---
 st.set_page_config(page_title="Affiliate Voice Generator Pro", layout="wide")
 
 st.title("🎙️ Affiliate Voice Generator Pro")
@@ -131,7 +198,7 @@ if check_password():
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
 
-    # --- ส่วน Profile Management UI ---
+    # --- Profile Management UI ---
     with st.container(border=True):
         st.subheader("📁 Profile Management")
         
@@ -164,29 +231,31 @@ if check_password():
             # ปุ่มเพิ่ม Profile
             if st.button("➕ Add Profile", use_container_width=True):
                 if create_new_profile(new_profile_name):
-                    st.success(f"Created profile: {new_profile_name}")
+                    st.success(f"✅ Created profile: {new_profile_name}")
                     st.rerun()
                 else:
                     st.error("Profile name is empty or already exists")
         
         # ปุ่มลบ Profile (ไม่ให้ลบ Default)
         if st.session_state.current_profile != 'Default':
-            if st.button(f"🗑️ Delete '{st.session_state.current_profile}' Profile", 
-                        type="secondary",
-                        use_container_width=False):
-                if delete_profile(st.session_state.current_profile):
-                    st.success("Profile deleted")
-                    st.rerun()
+            col_del1, col_del2, col_del3 = st.columns([1, 2, 1])
+            with col_del2:
+                if st.button(f"🗑️ Delete '{st.session_state.current_profile}' Profile", 
+                            type="secondary",
+                            use_container_width=True):
+                    if delete_profile(st.session_state.current_profile):
+                        st.success("Profile deleted")
+                        st.rerun()
 
     # ดึงข้อมูลจาก Profile ปัจจุบัน
     profile_data = get_current_profile_data()
 
-    # --- เริ่มส่วน UI หลักของแอป ---
+    # --- Main UI ---
     with st.container(border=True):
         st.subheader("1. ใส่สคริปต์และคำสั่ง")
         
         # แสดงชื่อ Profile ที่กำลังใช้
-        st.info(f"Currently using profile: **{st.session_state.current_profile}**")
+        st.info(f"📌 Currently using profile: **{st.session_state.current_profile}**")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -257,14 +326,17 @@ if check_password():
                 key="filename_input",
                 on_change=lambda: auto_save_field('filename', st.session_state.filename_input)
             )
+            
+            # แสดงสถานะการบันทึก
+            st.caption("💾 ข้อมูลจะถูกบันทึกอัตโนมัติเมื่อมีการเปลี่ยนแปลง")
 
     st.write("---")
 
-    # --- ปุ่ม Generate และส่วนแสดงผลลัพธ์ ---
+    # --- Generate Button ---
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
 
         if not main_text:
-            st.warning("กรุณาใส่สคริปต์ในช่อง Main Text")
+            st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
         else:
             with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
                 try:
@@ -296,10 +368,40 @@ if check_password():
                         )
 
                 except Exception as e:
-                    st.error(f"เกิดข้อผิดพลาด: {e}")
+                    st.error(f"❌ เกิดข้อผิดพลาด: {e}")
+                    
+                    # แสดงข้อมูล Debug เพิ่มเติม
+                    with st.expander("🔍 ดูรายละเอียด Error"):
+                        st.code(str(e))
+                        st.info("""
+                        หากพบ Error เกี่ยวกับ API:
+                        1. ตรวจสอบว่า API Key ถูกต้อง
+                        2. ตรวจสอบ Quota ของ API
+                        3. ลองใช้ text สั้นๆ ก่อนเพื่อทดสอบ
+                        """)
 
-    # --- ส่วนแสดงข้อมูล Debug (สำหรับตรวจสอบ) ---
-    with st.expander("🔧 Debug Information (for testing)"):
-        st.write("Current Profiles:", st.session_state.profiles)
-        st.write("Current Profile:", st.session_state.current_profile)
-        st.write("Profile Data:", profile_data)
+    # --- Footer Info ---
+    with st.expander("ℹ️ ข้อมูลเกี่ยวกับ Profile"):
+        st.info("""
+        **📁 ระบบ Profile:**
+        - ข้อมูล Profile จะถูกบันทึกอัตโนมัติทุกครั้งที่มีการเปลี่ยนแปลง
+        - ข้อมูลจะคงอยู่แม้ปิด Browser หรือ Refresh หน้า
+        - สามารถสร้าง Profile ได้ไม่จำกัด
+        - Profile 'Default' ไม่สามารถลบได้
+        
+        **🔒 ความปลอดภัย:**
+        - API Key ถูกเก็บใน Streamlit Secrets (ไม่แสดงในโค้ด)
+        - ข้อมูล Profile ไม่มี API Key หรือข้อมูลส่วนตัว
+        - ต้องใส่รหัสผ่านเพื่อเข้าใช้งาน
+        """)
+        
+        # Debug Information (ซ่อนได้)
+        if st.checkbox("🔧 แสดงข้อมูล Debug"):
+            col_debug1, col_debug2 = st.columns(2)
+            with col_debug1:
+                st.write("**Profiles ทั้งหมด:**")
+                st.json(st.session_state.profiles)
+            with col_debug2:
+                st.write("**Profile ปัจจุบัน:**", st.session_state.current_profile)
+                st.write("**ข้อมูล Profile:**")
+                st.json(profile_data)
