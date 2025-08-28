@@ -1,7 +1,6 @@
-# File: backend/aky_voice_backend.py
+# File: backend/aky_voice_backend.py (ฉบับปรับปรุง)
 # -*- coding: utf-8 -*-
 import os
-import struct
 import subprocess
 import google.generativeai as genai
 
@@ -11,60 +10,55 @@ def run_tts_generation(
     ffmpeg_path: str
 ):
     """
-    ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google Gemini
-    ใช้ google.generativeai library ที่ถูกต้อง
+    ฟังก์ชันหลักสำหรับสร้าง TTS โดยใช้โมเดล 'models/text-to-speech' ที่ดีที่สุด
     """
     try:
-        # Configure API
+        # 1. ตั้งค่า API Key
         genai.configure(api_key=api_key)
         
-        # สร้าง model
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        # 2. [แก้ไข] สร้าง model โดยใช้ชื่อโมเดลสำหรับ TTS โดยเฉพาะ
+        model = genai.GenerativeModel('models/text-to-speech')
         
-        # เตรียม prompt
-        full_prompt = f"""
-        {style_instructions}
+        # 3. เตรียม prompt
+        full_prompt = f"{style_instructions}\n\n{main_text}"
         
-        {main_text}
-        """
-        
-        # สร้างเส้นทางไฟล์
+        # 4. สร้างเส้นทางไฟล์
         wav_path, mp3_path = determine_output_paths(output_folder, output_filename)
         
-        # เรียกใช้ API พร้อม speech config
+        # 5. [แก้ไข] เรียกใช้ API พร้อม config ที่ถูกต้องสำหรับโมเดล TTS
         response = model.generate_content(
             full_prompt,
             generation_config=genai.GenerationConfig(
                 temperature=temperature,
-                response_modalities=["AUDIO"],
-                speech_config={
-                    "voice_config": {
-                        "prebuilt_voice_config": {
-                            "voice_name": voice_name
-                        }
-                    }
-                }
+                # ระบุว่าต้องการไฟล์เสียง WAV กลับมา
+                response_mime_type="audio/wav", 
+            ),
+            # Speech config ยังคงเหมือนเดิม
+            speech_config=genai.SpeechConfig(
+                voice_config=genai.VoiceConfig(
+                    prebuilt_voice_config=genai.PrebuiltVoiceConfig(
+                        voice_name=voice_name
+                    )
+                )
             )
         )
         
-        # ตรวจสอบและดึงข้อมูลเสียง
-        if response and response.candidates:
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    audio_data = part.inline_data.data
-                    
-                    # แปลงเป็น WAV format
-                    final_wav_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
-                    save_binary_file(wav_path, final_wav_data)
-                    
-                    # แปลงเป็น MP3
-                    convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
-                    
-                    # ลบไฟล์ temporary WAV
-                    if os.path.exists(wav_path):
-                        os.remove(wav_path)
-                    
-                    return mp3_path
+        # 6. [แก้ไข] ดึงข้อมูลเสียงที่ตอนนี้เป็นไฟล์ WAV ที่สมบูรณ์แล้ว
+        if response and response.candidates and hasattr(response.candidates[0].content.parts[0], 'inline_data'):
+            # API ส่งไฟล์ WAV กลับมาโดยตรง ไม่ต้องแปลงเอง
+            wav_audio_data = response.candidates[0].content.parts[0].inline_data.data
+            
+            # บันทึกไฟล์ WAV ชั่วคราว
+            save_binary_file(wav_path, wav_audio_data)
+            
+            # แปลงเป็น MP3
+            convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
+            
+            # ลบไฟล์ temporary WAV
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+            
+            return mp3_path
         
         raise ValueError("No audio data received from the API.")
         
@@ -77,7 +71,7 @@ def convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path):
     try:
         command = [ffmpeg_path, '-i', wav_path, '-y',
                    '-acodec', 'libmp3lame', '-q:a', '2', mp3_path]
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(command, check=True, capture_output=True, text=True)
     except FileNotFoundError:
         raise FileNotFoundError(f"FFMPEG not found. Make sure '{ffmpeg_path}' is accessible.")
     except subprocess.CalledProcessError as e:
@@ -110,48 +104,4 @@ def save_binary_file(file_name, data):
     with open(file_name, "wb") as f:
         f.write(data)
 
-
-def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
-    """แปลงข้อมูลเสียงเป็นรูปแบบ WAV"""
-    parameters = parse_audio_mime_type(mime_type)
-    bits_per_sample = parameters["bits_per_sample"]
-    sample_rate = parameters["rate"]
-    
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI", 
-        b"RIFF", 
-        36 + len(audio_data), 
-        b"WAVE", 
-        b"fmt ", 
-        16, 
-        1, 
-        1, 
-        sample_rate,
-        sample_rate * (bits_per_sample // 8), 
-        (bits_per_sample // 8), 
-        bits_per_sample, 
-        b"data", 
-        len(audio_data)
-    )
-    
-    return header + audio_data
-
-
-def parse_audio_mime_type(mime_type: str) -> dict:
-    """แปลง mime type เป็นพารามิเตอร์เสียง"""
-    bits_per_sample = 16
-    rate = 24000
-    
-    for param in mime_type.split(";"):
-        if param.lower().strip().startswith("rate="):
-            try:
-                rate = int(param.split("=", 1)[1])
-            except:
-                pass
-        elif param.strip().startswith("audio/L"):
-            try:
-                bits_per_sample = int(param.split("L", 1)[1])
-            except:
-                pass
-                
-    return {"bits_per_sample": bits_per_sample, "rate": rate}
+# [ลบออก] ฟังก์ชัน convert_to_wav และ parse_audio_mime_type ไม่จำเป็นต้องใช้อีกต่อไป
