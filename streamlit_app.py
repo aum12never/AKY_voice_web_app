@@ -343,25 +343,69 @@ if check_password():
         save_to_current_profile('temperature', temperature)
         save_to_current_profile('filename', output_filename)
 
+        # Debug: แสดงค่าทั้งหมดก่อนส่ง API
+        st.write("### 🔍 Debug Information:")
+        st.write(f"**API Key exists:** {bool(api_key and len(api_key) > 10)}")
+        st.write(f"**Style Instructions:** '{style_instructions}' (length: {len(style_instructions)})")
+        st.write(f"**Main Text:** '{main_text}' (length: {len(main_text)})")
+        st.write(f"**Voice:** {selected_voice_display}")
+        st.write(f"**Voice for API:** {selected_voice_display.split(' - ')[0]}")
+        st.write(f"**Temperature:** {temperature}")
+        st.write(f"**Filename:** {output_filename}")
+        
+        # ทดสอบโดยใช้ข้อความสั้นๆ แทน
+        test_text = "Hello world, this is a test."
+        st.write(f"**Test with simple text:** '{test_text}'")
+
         if not main_text or main_text.strip() == '':
             st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
         else:
-            with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
-                try:
-                    voice_name_for_api = selected_voice_display.split(' - ')[0]
-                    temp_output_folder = "temp_output"
+            # ให้ผู้ใช้เลือกว่าจะใช้ text จริงหรือ test text
+            col_test1, col_test2 = st.columns(2)
+            with col_test1:
+                if st.button("🧪 Test with Simple Text", use_container_width=True):
+                    text_to_use = test_text
+                    st.info("Using test text...")
+                else:
+                    text_to_use = None
+            
+            with col_test2:
+                if st.button("📝 Generate with Your Text", use_container_width=True):
+                    text_to_use = main_text
+                    st.info("Using your text...")
+                else:
+                    if 'text_to_use' not in locals():
+                        text_to_use = None
+            
+            if text_to_use:
+                with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
+                    try:
+                        voice_name_for_api = selected_voice_display.split(' - ')[0]
+                        temp_output_folder = "temp_output"
 
-                    # เรียกใช้ Backend
-                    final_mp3_path = run_tts_generation(
-                        api_key=api_key,
-                        style_instructions=style_instructions,
-                        main_text=main_text,
-                        voice_name=voice_name_for_api,
-                        output_folder=temp_output_folder,
-                        output_filename=output_filename,
-                        temperature=temperature,
-                        ffmpeg_path="ffmpeg"
-                    )
+                        # แสดงพารามิเตอร์ที่จะส่งไป
+                        st.write("### Parameters sending to API:")
+                        params_dict = {
+                            "api_key": f"[API_KEY_LENGTH_{len(api_key)}]",
+                            "style_instructions": style_instructions[:100] + "..." if len(style_instructions) > 100 else style_instructions,
+                            "main_text": text_to_use[:100] + "..." if len(text_to_use) > 100 else text_to_use,
+                            "voice_name": voice_name_for_api,
+                            "temperature": temperature,
+                            "ffmpeg_path": "ffmpeg"
+                        }
+                        st.json(params_dict)
+
+                        # เรียกใช้ Backend
+                        final_mp3_path = run_tts_generation(
+                            api_key=api_key,
+                            style_instructions=style_instructions,
+                            main_text=text_to_use,
+                            voice_name=voice_name_for_api,
+                            output_folder=temp_output_folder,
+                            output_filename=output_filename,
+                            temperature=temperature,
+                            ffmpeg_path="ffmpeg"
+                        )
 
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
                     st.audio(final_mp3_path, format='audio/mp3')
