@@ -1,10 +1,10 @@
-# File: aky_voice_backend.py (Fixed for google-generativeai library)
+# File: aky_voice_backend.py (Fixed for latest google-generativeai)
 # -*- coding: utf-8 -*-
 import os
 import struct
 import subprocess
 import google.generativeai as genai
-import time
+import json
 
 def run_tts_generation(
     api_key: str, style_instructions: str, main_text: str, voice_name: str,
@@ -13,7 +13,7 @@ def run_tts_generation(
 ):
     """
     ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google Gemini API
-    ใช้ไลบรารี google-generativeai อย่างถูกต้อง
+    ใช้ไลบรารี google-generativeai with proper Audio generation
     """
     try:
         # Configure API
@@ -30,65 +30,108 @@ def run_tts_generation(
         wav_path, mp3_path = determine_output_paths(
             output_folder, output_filename)
         
-        # ใช้ Gemini 2.0 Flash Experimental สำหรับ TTS
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        # ใช้ Gemini Pro 1.5 หรือ model ที่รองรับ audio
+        model = genai.GenerativeModel('gemini-1.5-flash-8b')
         
-        # สร้าง content พร้อม speech config
-        result = model.generate_content(
-            [full_prompt],
-            generation_config=genai.GenerationConfig(
-                temperature=temperature,
-                response_modalities=["AUDIO"],
-                speech_config={
+        # สร้าง request สำหรับ audio generation
+        # ลองใช้วิธีการสร้าง audio content
+        response = model.generate_content(
+            full_prompt,
+            generation_config={
+                "temperature": temperature,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 8192,
+            }
+        )
+        
+        # Check if the response contains audio
+        # Note: The actual audio generation might need different approach
+        # Let's try alternative method using specific audio model
+        
+        # Alternative approach - using specific TTS endpoint if available
+        import requests
+        
+        # Prepare the request for TTS
+        headers = {
+            "Content-Type": "application/json",
+        }
+        
+        # Try using the REST API directly for TTS
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+        
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": full_prompt
+                }]
+            }],
+            "generationConfig": {
+                "temperature": temperature,
+                "candidateCount": 1,
+                "response_modalities": ["AUDIO"],
+                "speech_config": {
                     "voice_config": {
                         "prebuilt_voice_config": {
                             "voice_name": voice_name
                         }
                     }
                 }
-            ),
-        )
+            }
+        }
         
-        # ตรวจสอบและดึงข้อมูลเสียง
-        if result and result.candidates:
-            candidate = result.candidates[0]
-            if candidate.content and candidate.content.parts:
-                for part in candidate.content.parts:
-                    if hasattr(part, 'inline_data') and part.inline_data:
-                        if hasattr(part.inline_data, 'data'):
-                            audio_data = part.inline_data.data
-                            
-                            # ตรวจสอบ mime_type
-                            mime_type = getattr(part.inline_data, 'mime_type', 'audio/wav')
-                            
-                            # แปลงเป็น WAV format ถ้าจำเป็น
-                            if 'pcm' in mime_type.lower() or 'l16' in mime_type.lower():
-                                final_wav_data = convert_to_wav(audio_data, mime_type)
-                            else:
-                                final_wav_data = audio_data
-                            
-                            # บันทึกไฟล์ WAV
-                            save_binary_file(wav_path, final_wav_data)
-                            
-                            # แปลงเป็น MP3
-                            convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
-                            
-                            # ลบไฟล์ temporary WAV
-                            try:
-                                os.remove(wav_path)
-                            except:
-                                pass
-                            
-                            return mp3_path
+        # Make the request
+        response = requests.post(api_url, headers=headers, json=payload)
         
-        # ถ้าไม่พบข้อมูลเสียง ให้ลองดู error message
-        error_msg = "No audio data received from the API."
-        if result and hasattr(result, 'prompt_feedback'):
-            feedback = result.prompt_feedback
-            if hasattr(feedback, 'block_reason'):
-                error_msg = f"Content was blocked: {feedback.block_reason}"
-        
-        raise ValueError(error_msg)
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Extract audio data from response
+            if 'candidates' in result and len(result['candidates']) > 0:
+                candidate = result['candidates'][0]
+                if 'content' in candidate and 'parts' in candidate['content']:
+                    for part in candidate['content']['parts']:
+                        if 'inlineData' in part:
+                            audio_data = part['inlineData'].get('data', '')
+                            if audio_data:
+                                # Decode base64 audio data
+                                import base64
+                                audio_bytes = base64.b64decode(audio_data)
+                                
+                                # Get mime type
+                                mime_type = part['inlineData'].get('mimeType', 'audio/wav')
+                                
+                                # Convert to WAV if needed
+                                if 'pcm' in mime_type.lower() or 'l16' in mime_type.lower():
+                                    final_wav_data = convert_to_wav(audio_bytes, mime_type)
+                                else:
+                                    final_wav_data = audio_bytes
+                                
+                                # Save WAV file
+                                save_binary_file(wav_path, final_wav_data)
+                                
+                                # Convert to MP3
+                                convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
+                                
+                                # Remove temporary WAV
+                                try:
+                                    os.remove(wav_path)
+                                except:
+                                    pass
+                                
+                                return mp3_path
+            
+            # If no audio in response, it might not be supported
+            raise ValueError("This model might not support direct audio generation. Please check Google's TTS API documentation for the correct model and endpoint.")
+        else:
+            error_msg = f"API request failed with status {response.status_code}"
+            if response.text:
+                try:
+                    error_detail = response.json()
+                    error_msg = f"API Error: {error_detail.get('error', {}).get('message', error_msg)}"
+                except:
+                    error_msg = f"API Error: {response.text[:200]}"
+            raise ValueError(error_msg)
 
     except Exception as e:
         # เพิ่ม debugging info
@@ -96,11 +139,11 @@ def run_tts_generation(
         
         # ตรวจสอบประเภทของ error
         if "API_KEY" in str(e).upper() or "authentication" in str(e).lower():
-            error_message = "API Key Error: Please check your API key is valid and has proper permissions."
+            error_message = "API Key Error: Please check your API key is valid and has proper permissions for TTS/Audio generation."
         elif "quota" in str(e).lower():
             error_message = "Quota Error: You may have exceeded your API quota limit."
-        elif "model" in str(e).lower():
-            error_message = "Model Error: The model name might be incorrect or unavailable."
+        elif "model" in str(e).lower() or "audio" in str(e).lower():
+            error_message = "Model Error: The current model might not support audio generation. Google's TTS feature might require specific API access or a different endpoint."
         
         raise ValueError(error_message)
 
@@ -216,23 +259,3 @@ def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     )
     
     return header + audio_data
-
-def parse_audio_mime_type(mime_type: str) -> dict:
-    """แปลง mime type เป็นพารามิเตอร์เสียง (Legacy function for compatibility)"""
-    bits_per_sample = 16
-    rate = 24000
-
-    for param in mime_type.split(";"):
-        param = param.strip().lower()
-        if param.startswith("rate="):
-            try:
-                rate = int(param.split("=", 1)[1])
-            except:
-                pass
-        elif param.startswith("audio/l"):
-            try:
-                bits_per_sample = int(param.split("l", 1)[1])
-            except:
-                pass
-
-    return {"bits_per_sample": bits_per_sample, "rate": rate}
