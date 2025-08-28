@@ -351,14 +351,22 @@ if check_password():
     # --- Generate Button ---
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
 
-        # ★★★ แก้ไขตรงนี้: ใช้ค่าจาก session_state แทน ★★★
-        current_style_instructions = st.session_state.get('style_input', '')
-        current_main_text = st.session_state.get('main_text_input', '')
-        current_voice = st.session_state.get('voice_selector', 'Achernar - Soft')
-        current_temperature = st.session_state.get('temp_slider', 0.9)
-        current_filename = st.session_state.get('filename_input', 'my_voiceover')
+        # ดึงค่าจาก session_state (ค่าปัจจุบันที่ผู้ใช้กรอก)
+        current_main_text = st.session_state.get('main_text_input', main_text)
+        current_style_instructions = st.session_state.get('style_input', style_instructions)
+        current_voice = st.session_state.get('voice_selector', selected_voice_display)
+        current_temperature = st.session_state.get('temp_slider', temperature)
+        current_filename = st.session_state.get('filename_input', output_filename)
 
-        if not current_main_text:
+        # Debug: แสดงค่าที่จะส่งไป API
+        st.write("Debug - ข้อมูลที่จะส่ง:")
+        st.write(f"Style: {current_style_instructions[:50]}...")
+        st.write(f"Main text: {current_main_text[:50]}...")
+        st.write(f"Voice: {current_voice}")
+        st.write(f"Temperature: {current_temperature}")
+        st.write(f"Filename: {current_filename}")
+
+        if not current_main_text or current_main_text.strip() == '':
             st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
         else:
             with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
