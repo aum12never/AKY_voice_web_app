@@ -1,10 +1,9 @@
-# File: aky_voice_backend.py (Fixed Import Version)
+# File: backend/aky_voice_backend.py
 # -*- coding: utf-8 -*-
 import os
 import struct
 import subprocess
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
 def run_tts_generation(
     api_key: str, style_instructions: str, main_text: str, voice_name: str,
@@ -12,12 +11,15 @@ def run_tts_generation(
     ffmpeg_path: str
 ):
     """
-    ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google AI Studio
-    ใช้ไลบรารี google.genai และ google.genai.types
+    ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google Gemini
+    ใช้ google.generativeai library ที่ถูกต้อง
     """
     try:
-        # สร้าง Client object
-        client = genai.Client(api_key=api_key)
+        # Configure API
+        genai.configure(api_key=api_key)
+        
+        # สร้าง model
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
         # เตรียม prompt
         full_prompt = f"""
@@ -26,50 +28,45 @@ def run_tts_generation(
         {main_text}
         """
         
-        # สร้าง config object ด้วย types จาก google.genai
-        config = types.GenerateContentConfig(
-            temperature=temperature,
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=voice_name
-                    )
-                )
-            )
-        )
-        
         # สร้างเส้นทางไฟล์
         wav_path, mp3_path = determine_output_paths(output_folder, output_filename)
         
-        # เรียกใช้ API
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-tts",
-            contents=full_prompt,
-            config=config
+        # เรียกใช้ API พร้อม speech config
+        response = model.generate_content(
+            full_prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=temperature,
+                response_modalities=["AUDIO"],
+                speech_config={
+                    "voice_config": {
+                        "prebuilt_voice_config": {
+                            "voice_name": voice_name
+                        }
+                    }
+                }
+            )
         )
         
-        # ดึงข้อมูลเสียงจาก response
-        if (response.candidates and 
-            response.candidates[0].content and 
-            response.candidates[0].content.parts and
-            response.candidates[0].content.parts[0].inline_data):
-            
-            audio_data = response.candidates[0].content.parts[0].inline_data.data
-            
-            # แปลงเป็น WAV format
-            final_wav_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
-            save_binary_file(wav_path, final_wav_data)
-            
-            # แปลงเป็น MP3
-            convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
-            
-            # ลบไฟล์ temporary WAV 
-            os.remove(wav_path)
-            
-            return mp3_path
-        else:
-            raise ValueError("No audio data received from the API.")
+        # ตรวจสอบและดึงข้อมูลเสียง
+        if response and response.candidates:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    audio_data = part.inline_data.data
+                    
+                    # แปลงเป็น WAV format
+                    final_wav_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
+                    save_binary_file(wav_path, final_wav_data)
+                    
+                    # แปลงเป็น MP3
+                    convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
+                    
+                    # ลบไฟล์ temporary WAV
+                    if os.path.exists(wav_path):
+                        os.remove(wav_path)
+                    
+                    return mp3_path
+        
+        raise ValueError("No audio data received from the API.")
         
     except Exception as e:
         raise ValueError(f"Backend Error: {str(e)}")
@@ -140,7 +137,7 @@ def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     return header + audio_data
 
 
-def parse_audio_mime_type(mime_type: str) -> dict[str, int]:
+def parse_audio_mime_type(mime_type: str) -> dict:
     """แปลง mime type เป็นพารามิเตอร์เสียง"""
     bits_per_sample = 16
     rate = 24000
