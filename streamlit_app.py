@@ -272,20 +272,14 @@ if check_password():
                 "Style Instructions:",
                 height=250,
                 value=profile_data.get('style_instructions', ''),
-                placeholder="ตัวอย่าง: พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง",
-                key="style_input",
-                on_change=lambda: auto_save_field(
-                    'style_instructions', st.session_state.style_input)
+                placeholder="ตัวอย่าง: พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง"
             )
         with col2:
             main_text = st.text_area(
                 "Main Text (Script):",
                 height=250,
                 value=profile_data.get('main_text', ''),
-                placeholder="ใส่สคริปต์หลักของคุณที่นี่...",
-                key="main_text_input",
-                on_change=lambda: auto_save_field(
-                    'main_text', st.session_state.main_text_input)
+                placeholder="ใส่สคริปต์หลักของคุณที่นี่..."
             )
 
     with st.container(border=True):
@@ -317,10 +311,7 @@ if check_password():
             selected_voice_display = st.selectbox(
                 "เลือกเสียงพากย์:",
                 options=voice_display_list,
-                index=voice_index,
-                key="voice_selector",
-                on_change=lambda: auto_save_field(
-                    'voice', st.session_state.voice_selector)
+                index=voice_index
             )
 
             temperature = st.slider(
@@ -328,61 +319,47 @@ if check_password():
                 min_value=0.0,
                 max_value=2.0,
                 value=profile_data.get('temperature', 0.9),
-                step=0.1,
-                key="temp_slider",
-                on_change=lambda: auto_save_field(
-                    'temperature', st.session_state.temp_slider)
+                step=0.1
             )
 
         with col4:
             output_filename = st.text_input(
                 "ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):",
-                value=profile_data.get('filename', 'my_voiceover'),
-                key="filename_input",
-                on_change=lambda: auto_save_field(
-                    'filename', st.session_state.filename_input)
+                value=profile_data.get('filename', 'my_voiceover')
             )
 
             # แสดงสถานะการบันทึก
-            st.caption("💾 ข้อมูลจะถูกบันทึกอัตโนมัติเมื่อมีการเปลี่ยนแปลง")
+            st.caption("💾 ข้อมูลจะถูกบันทึกเมื่อ Generate Audio")
 
     st.write("---")
 
     # --- Generate Button ---
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
 
-        # ดึงค่าจาก session_state (ค่าปัจจุบันที่ผู้ใช้กรอก)
-        current_main_text = st.session_state.get('main_text_input', main_text)
-        current_style_instructions = st.session_state.get('style_input', style_instructions)
-        current_voice = st.session_state.get('voice_selector', selected_voice_display)
-        current_temperature = st.session_state.get('temp_slider', temperature)
-        current_filename = st.session_state.get('filename_input', output_filename)
+        # บันทึกค่าปัจจุบันลง Profile ก่อน Generate
+        save_to_current_profile('style_instructions', style_instructions)
+        save_to_current_profile('main_text', main_text)
+        save_to_current_profile('voice', selected_voice_display)
+        save_to_current_profile('temperature', temperature)
+        save_to_current_profile('filename', output_filename)
 
-        # Debug: แสดงค่าที่จะส่งไป API
-        st.write("Debug - ข้อมูลที่จะส่ง:")
-        st.write(f"Style: {current_style_instructions[:50]}...")
-        st.write(f"Main text: {current_main_text[:50]}...")
-        st.write(f"Voice: {current_voice}")
-        st.write(f"Temperature: {current_temperature}")
-        st.write(f"Filename: {current_filename}")
-
-        if not current_main_text or current_main_text.strip() == '':
+        if not main_text or main_text.strip() == '':
             st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
         else:
             with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
                 try:
-                    voice_name_for_api = current_voice.split(' - ')[0]
+                    voice_name_for_api = selected_voice_display.split(' - ')[0]
                     temp_output_folder = "temp_output"
 
                     # เรียกใช้ Backend
                     final_mp3_path = run_tts_generation(
                         api_key=api_key,
-                        style_instructions=current_style_instructions,
-                        main_text=current_main_text,
+                        style_instructions=style_instructions,
+                        main_text=main_text,
                         voice_name=voice_name_for_api,
                         output_folder=temp_output_folder,
-                        output_filename=current_filename,
-                        temperature=current_temperature,
+                        output_filename=output_filename,
+                        temperature=temperature,
                         ffmpeg_path="ffmpeg"
                     )
 
