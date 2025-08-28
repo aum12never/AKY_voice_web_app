@@ -407,6 +407,33 @@ if check_password():
                             ffmpeg_path="ffmpeg"
                         )
 
+                        st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
+                        st.audio(final_mp3_path, format='audio/mp3')
+
+                        with open(final_mp3_path, "rb") as file:
+                            st.download_button(
+                                label="📥 ดาวน์โหลดไฟล์ MP3",
+                                data=file,
+                                file_name=os.path.basename(final_mp3_path),
+                                mime="audio/mp3",
+                                use_container_width=True
+                            )
+
+                    except Exception as e:
+                        st.error(f"❌ เกิดข้อผิดพลาด: {e}")
+
+                        # แสดงข้อมูล Debug เพิ่มเติม
+                        with st.expander("🔍 ดูรายละเอียด Error"):
+                            st.code(str(e))
+                            st.info("""
+                            หากพบ Error เกี่ยวกับ API:
+                            1. ตรวจสอบว่า API Key ถูกต้อง
+                            2. ตรวจสอบ Quota ของ API
+                            3. ลองใช้ text สั้นๆ ก่อนเพื่อทดสอบ
+                            """)
+            else:
+                st.info("👆 กรุณาเลือกปุ่มด้านบนเพื่อเริ่ม Generate")
+
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
                     st.audio(final_mp3_path, format='audio/mp3')
 
