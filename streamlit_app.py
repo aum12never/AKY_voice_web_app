@@ -1,5 +1,6 @@
 # File: streamlit_app.py
 # -*- coding: utf-8 -*-
+
 import streamlit as st
 import os
 import json
@@ -12,7 +13,6 @@ from pathlib import Path
 PROFILES_FILE = "profiles_data.json"
 
 # --- Persistent Storage Functions ---
-
 
 def load_profiles_from_file() -> Dict:
     """โหลดข้อมูล Profiles จากไฟล์ JSON"""
@@ -38,7 +38,6 @@ def load_profiles_from_file() -> Dict:
         'last_profile': 'Default'
     }
 
-
 def save_profiles_to_file(data: Dict):
     """บันทึกข้อมูล Profiles ลงไฟล์ JSON"""
     try:
@@ -50,7 +49,6 @@ def save_profiles_to_file(data: Dict):
         return False
 
 # --- Profile Management Functions ---
-
 
 def initialize_profiles():
     """สร้าง Session State สำหรับเก็บข้อมูล Profiles"""
@@ -72,14 +70,12 @@ def initialize_profiles():
     if 'data_changed' not in st.session_state:
         st.session_state.data_changed = False
 
-
 def get_current_profile_data() -> Dict[str, Any]:
     """ดึงข้อมูลของ Profile ปัจจุบัน"""
     return st.session_state.profiles.get(
         st.session_state.current_profile,
         st.session_state.profiles['Default']
     )
-
 
 def save_to_current_profile(field: str, value: Any):
     """บันทึกค่าไปยัง Profile ปัจจุบันและบันทึกลงไฟล์"""
@@ -92,7 +88,6 @@ def save_to_current_profile(field: str, value: Any):
             'last_profile': st.session_state.current_profile
         }
         save_profiles_to_file(data_to_save)
-
 
 def create_new_profile(profile_name: str) -> bool:
     """สร้าง Profile ใหม่"""
@@ -119,7 +114,6 @@ def create_new_profile(profile_name: str) -> bool:
 
     return True
 
-
 def delete_profile(profile_name: str) -> bool:
     """ลบ Profile (ห้ามลบ Default)"""
     if profile_name == 'Default' or profile_name not in st.session_state.profiles:
@@ -140,7 +134,6 @@ def delete_profile(profile_name: str) -> bool:
 
     return True
 
-
 def switch_profile(profile_name: str):
     """สลับไปยัง Profile อื่น"""
     if profile_name in st.session_state.profiles:
@@ -155,7 +148,6 @@ def switch_profile(profile_name: str):
 
 # --- Auto-save Function ---
 
-
 def auto_save_field(field_name: str, value: Any):
     """บันทึกค่าอัตโนมัติเมื่อมีการเปลี่ยนแปลง"""
     current_key = f"{st.session_state.current_profile}_{field_name}"
@@ -166,7 +158,6 @@ def auto_save_field(field_name: str, value: Any):
         st.session_state.last_saved_values[current_key] = value
 
 # --- Password Check Function ---
-
 
 def check_password():
     """Returns `True` if the user had the correct password."""
@@ -190,7 +181,6 @@ def check_password():
         return False
     else:
         return True
-
 
 # --- Main App ---
 st.set_page_config(page_title="Affiliate Voice Generator Pro", layout="wide")
@@ -358,28 +348,33 @@ if check_password():
 
     st.write("---")
 
-# --- Generate Button ---
+    # --- Generate Button ---
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
 
-        # ตรวจสอบข้อมูลจาก profile_data โดยตรง ซึ่งเป็นข้อมูลที่ถูกต้องที่สุด
-        if not profile_data.get('main_text', ''):
+        # ★★★ แก้ไขตรงนี้: ใช้ค่าจาก session_state แทน ★★★
+        current_style_instructions = st.session_state.get('style_input', '')
+        current_main_text = st.session_state.get('main_text_input', '')
+        current_voice = st.session_state.get('voice_selector', 'Achernar - Soft')
+        current_temperature = st.session_state.get('temp_slider', 0.9)
+        current_filename = st.session_state.get('filename_input', 'my_voiceover')
+
+        if not current_main_text:
             st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
         else:
             with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
                 try:
-                    # ดึงข้อมูลเสียงจาก profile_data โดยตรง
-                    voice_name_for_api = profile_data.get('voice', 'Achernar - Soft').split(' - ')[0]
+                    voice_name_for_api = current_voice.split(' - ')[0]
                     temp_output_folder = "temp_output"
 
-                    # เรียกใช้ Backend โดยดึงข้อมูลจาก profile_data ทั้งหมดเพื่อความถูกต้อง
+                    # เรียกใช้ Backend
                     final_mp3_path = run_tts_generation(
                         api_key=api_key,
-                        style_instructions=profile_data.get('style_instructions', ''),
-                        main_text=profile_data.get('main_text', ''),
+                        style_instructions=current_style_instructions,
+                        main_text=current_main_text,
                         voice_name=voice_name_for_api,
                         output_folder=temp_output_folder,
-                        output_filename=profile_data.get('filename', 'my_voiceover'),
-                        temperature=profile_data.get('temperature', 0.9),
+                        output_filename=current_filename,
+                        temperature=current_temperature,
                         ffmpeg_path="ffmpeg"
                     )
 
@@ -407,18 +402,6 @@ if check_password():
                         2. ตรวจสอบ Quota ของ API
                         3. ลองใช้ text สั้นๆ ก่อนเพื่อทดสอบ
                         """)
-                except Exception as e:
-                    st.error(f"❌ เกิดข้อผิดพลาด: {e}")
-
-                    # แสดงข้อมูล Debug เพิ่มเติม
-                    with st.expander("🔍 ดูรายละเอียด Error"):
-                        st.code(str(e))
-                        st.info("""
-                        หากพบ Error เกี่ยวกับ API:
-                        1. ตรวจสอบว่า API Key ถูกต้อง
-                        2. ตรวจสอบ Quota ของ API
-                        3. ลองใช้ text สั้นๆ ก่อนเพื่อทดสอบ
-                        """)
 
     # --- Footer Info ---
     with st.expander("ℹ️ ข้อมูลเกี่ยวกับ Profile"):
@@ -428,7 +411,7 @@ if check_password():
         - ข้อมูลจะคงอยู่แม้ปิด Browser หรือ Refresh หน้า
         - สามารถสร้าง Profile ได้ไม่จำกัด
         - Profile 'Default' ไม่สามารถลบได้
-        
+       
         **🔒 ความปลอดภัย:**
         - API Key ถูกเก็บใน Streamlit Secrets (ไม่แสดงในโค้ด)
         - ข้อมูล Profile ไม่มี API Key หรือข้อมูลส่วนตัว
@@ -446,10 +429,3 @@ if check_password():
                          st.session_state.current_profile)
                 st.write("**ข้อมูล Profile:**")
                 st.json(profile_data)
-
-
-
-
-
-
-
