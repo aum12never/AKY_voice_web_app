@@ -359,27 +359,28 @@ if check_password():
     st.write("---")
 
     # --- Generate Button ---
-    if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
+    if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
 
-        if not main_text:
-            st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
-        else:
-            with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
-                try:
-                    voice_name_for_api = selected_voice_display.split(' - ')[0]
-                    temp_output_folder = "temp_output"
+        # [แก้ไข] ตรวจสอบข้อมูลจาก profile_data โดยตรง
+        if not profile_data.get('main_text', ''):
+            st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
+        else:
+            with st.spinner("⏳ กำลังสร้างไฟล์เสียง... กรุณารอสักครู่..."):
+                try:
+                    voice_name_for_api = profile_data.get('voice', 'Achernar - Soft').split(' - ')[0]
+                    temp_output_folder = "temp_output"
 
-                    # เรียกใช้ Backend
-                    final_mp3_path = run_tts_generation(
-                        api_key=api_key,
-                        style_instructions=style_instructions,
-                        main_text=main_text,
-                        voice_name=voice_name_for_api,
-                        output_folder=temp_output_folder,
-                        output_filename=output_filename,
-                        temperature=temperature,
-                        ffmpeg_path="ffmpeg"
-                    )
+                    # [แก้ไข] เรียกใช้ Backend โดยดึงข้อมูลจาก profile_data ทั้งหมด
+                    final_mp3_path = run_tts_generation(
+                        api_key=api_key,
+                        style_instructions=profile_data.get('style_instructions', ''),
+                        main_text=profile_data.get('main_text', ''),
+                        voice_name=voice_name_for_api,
+                        output_folder=temp_output_folder,
+                        output_filename=profile_data.get('filename', 'my_voiceover'),
+                        temperature=profile_data.get('temperature', 0.9),
+                        ffmpeg_path="ffmpeg"
+                    )
 
                     st.success("🎉 สร้างไฟล์เสียงสำเร็จ!")
                     st.audio(final_mp3_path, format='audio/mp3')
@@ -432,3 +433,4 @@ if check_password():
                          st.session_state.current_profile)
                 st.write("**ข้อมูล Profile:**")
                 st.json(profile_data)
+
