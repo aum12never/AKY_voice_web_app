@@ -235,6 +235,7 @@ if check_password():
                 key="style_input",
                 value=profile_data.get('style_instructions', ''),
                 placeholder="ตัวอย่าง: พูดด้วยน้ำเสียงตื่นเต้น สดใส มีพลัง"
+                on_change=lambda: save_to_current_profile('style_instructions', st.session_state.style_input)
             )
         with col2:
             st.text_area(
@@ -243,6 +244,7 @@ if check_password():
                 key="main_text_input",
                 value=profile_data.get('main_text', ''),
                 placeholder="ใส่สคริปต์หลักของคุณที่นี่..."
+                on_change=lambda: save_to_current_profile('main_text', st.session_state.main_text_input)
             )
 
     with st.container(border=True):
@@ -271,6 +273,7 @@ if check_password():
                 options=voice_display_list,
                 index=voice_index,
                 key="voice_selector"
+                on_change=lambda: save_to_current_profile('voice', st.session_state.voice_selector)
             )
 
             st.slider(
@@ -279,6 +282,7 @@ if check_password():
                 value=profile_data.get('temperature', 0.9),
                 step=0.1,
                 key="temp_slider"
+                on_change=lambda: save_to_current_profile('temperature', st.session_state.temp_slider)
             )
 
         with col4:
@@ -286,6 +290,7 @@ if check_password():
                 "ตั้งชื่อไฟล์ (ไม่ต้องใส่นามสกุล .mp3):",
                 value=profile_data.get('filename', 'my_voiceover'),
                 key="filename_input"
+                on_change=lambda: save_to_current_profile('filename', st.session_state.filename_input)
             )
             st.caption("💾 ข้อมูลจะถูกบันทึกอัตโนมัติเมื่อมีการเปลี่ยนแปลง")
 
@@ -354,3 +359,4 @@ if check_password():
         if st.checkbox("🔧 แสดงข้อมูล Debug"):
             st.json(st.session_state.profiles)
             st.write("**Profile ปัจจุบัน:**", st.session_state.current_profile)
+
