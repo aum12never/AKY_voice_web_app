@@ -3,8 +3,9 @@
 import os
 import struct
 import subprocess
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
+from google import genai
+from google.genai import types
+import wave
 
 
 def run_tts_generation(
@@ -14,11 +15,11 @@ def run_tts_generation(
 ):
     """
     ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google AI Studio
-    ใช้ไลบรารี google.generativeai
+    ใช้ไลบรารี google.genai และ google.genai.types
     """
     try:
-        # Configure API key
-        genai.configure(api_key=api_key)
+        # สร้าง Client object
+        client = genai.Client(api_key=api_key)
 
         # เตรียม prompt
         full_prompt = f"""
@@ -27,20 +28,17 @@ def run_tts_generation(
         {main_text}
         """
 
-        # สร้าง model
-        model = genai.GenerativeModel('gemini-2.5-flash-preview-tts')
-
-        # สร้าง config object
-        config = GenerationConfig(
+        # สร้าง config object ด้วย types จาก google.genai
+        config = types.GenerateContentConfig(
             temperature=temperature,
             response_modalities=["AUDIO"],
-            speech_config={
-                "voice_config": {
-                    "prebuilt_voice_config": {
-                        "voice_name": voice_name
-                    }
-                }
-            }
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=voice_name
+                    )
+                )
+            )
         )
 
         # สร้างเส้นทางไฟล์
@@ -48,9 +46,10 @@ def run_tts_generation(
             output_folder, output_filename)
 
         # เรียกใช้ API
-        response = model.generate_content(
-            full_prompt,
-            generation_config=config
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=full_prompt,
+            config=config
         )
 
         # ดึงข้อมูลเสียงจาก response
@@ -61,9 +60,8 @@ def run_tts_generation(
 
             audio_data = response.candidates[0].content.parts[0].inline_data.data
 
-            # แปลงเป็น WAV format
-            final_wav_data = convert_to_wav(audio_data, "audio/L16;rate=24000")
-            save_binary_file(wav_path, final_wav_data)
+            # บันทึกไฟล์ WAV ด้วยฟังก์ชัน wave_file
+            wave_file(wav_path, audio_data)
 
             # แปลงเป็น MP3
             convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
@@ -78,6 +76,15 @@ def run_tts_generation(
 
     except Exception as e:
         raise ValueError(f"Backend Error: {str(e)}")
+
+
+def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
+    """สร้างไฟล์ WAV จาก PCM data ตามเอกสาร Google AI"""
+    with wave.open(filename, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(rate)
+        wf.writeframes(pcm)
 
 
 def convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path):
@@ -116,6 +123,7 @@ def determine_output_paths(folder, filename_base):
     return wav_output, mp3_output
 
 
+# เก็บฟังก์ชันเดิมไว้เป็น backup
 def save_binary_file(file_name, data):
     """บันทึกไฟล์ binary"""
     with open(file_name, "wb") as f:
