@@ -1,11 +1,11 @@
-# File: aky_voice_backend.py (Fixed Import Version)
+# File: aky_voice_backend.py (Streamlit Cloud Compatible Version)
 # -*- coding: utf-8 -*-
 import os
 import struct
 import subprocess
-from google import genai
-from google.genai import types
-import wave
+import requests
+import json
+import base64
 
 
 def run_tts_generation(
@@ -15,12 +15,9 @@ def run_tts_generation(
 ):
     """
     ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google AI Studio
-    ใช้ไลบรารี google.genai และ google.genai.types
+    ใช้ REST API เพื่อความเสถียรบน Streamlit Cloud
     """
     try:
-        # สร้าง Client object
-        client = genai.Client(api_key=api_key)
-
         # เตรียม prompt
         full_prompt = f"""
         {style_instructions}
@@ -28,40 +25,55 @@ def run_tts_generation(
         {main_text}
         """
 
-        # สร้าง config object ด้วย types จาก google.genai
-        config = types.GenerateContentConfig(
-            temperature=temperature,
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=voice_name
-                    )
-                )
-            )
-        )
+        # สร้าง request payload
+        payload = {
+            "contents": [{
+                "parts": [{"text": full_prompt}]
+            }],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {
+                            "voiceName": voice_name
+                        }
+                    }
+                }
+            }
+        }
+
+        # เพิ่ม temperature ถ้ามีค่า
+        if temperature != 0.9:  # default value
+            payload["generationConfig"]["temperature"] = temperature
 
         # สร้างเส้นทางไฟล์
         wav_path, mp3_path = determine_output_paths(
             output_folder, output_filename)
 
-        # เรียกใช้ API
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-tts",
-            contents=full_prompt,
-            config=config
-        )
+        # เรียก REST API
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json"
+        }
 
-        # ดึงข้อมูลเสียงจาก response
-        if (response.candidates and
-            response.candidates[0].content and
-            response.candidates[0].content.parts and
-                response.candidates[0].content.parts[0].inline_data):
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()  # Raise exception for HTTP errors
 
-            audio_data = response.candidates[0].content.parts[0].inline_data.data
+        # ประมวลผล response
+        data = response.json()
+        
+        if (data.get("candidates") and 
+            data["candidates"][0].get("content") and
+            data["candidates"][0]["content"].get("parts") and
+            data["candidates"][0]["content"]["parts"][0].get("inlineData")):
+            
+            # ดึงข้อมูลเสียงที่เป็น base64
+            audio_base64 = data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+            audio_data = base64.b64decode(audio_base64)
 
-            # บันทึกไฟล์ WAV ด้วยฟังก์ชัน wave_file
-            wave_file(wav_path, audio_data)
+            # บันทึกไฟล์ WAV
+            save_pcm_as_wav(wav_path, audio_data)
 
             # แปลงเป็น MP3
             convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
@@ -74,17 +86,46 @@ def run_tts_generation(
         else:
             raise ValueError("No audio data received from the API.")
 
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"API Request Error: {str(e)}")
     except Exception as e:
         raise ValueError(f"Backend Error: {str(e)}")
 
 
-def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
-    """สร้างไฟล์ WAV จาก PCM data ตามเอกสาร Google AI"""
-    with wave.open(filename, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(sample_width)
-        wf.setframerate(rate)
-        wf.writeframes(pcm)
+def save_pcm_as_wav(filename, pcm_data, channels=1, rate=24000, sample_width=2):
+    """บันทึก PCM data เป็นไฟล์ WAV"""
+    import wave
+    try:
+        with wave.open(filename, "wb") as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(rate)
+            wf.writeframes(pcm_data)
+    except Exception as e:
+        # Fallback: ใช้วิธีสร้าง WAV header แบบเดิม
+        wav_data = create_wav_header(pcm_data, channels, rate, sample_width) + pcm_data
+        save_binary_file(filename, wav_data)
+
+
+def create_wav_header(pcm_data, channels=1, rate=24000, sample_width=2):
+    """สร้าง WAV header"""
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + len(pcm_data),
+        b"WAVE",
+        b"fmt ",
+        16,  # PCM format size
+        1,   # PCM format
+        channels,
+        rate,
+        rate * channels * sample_width,
+        channels * sample_width,
+        sample_width * 8,
+        b"data",
+        len(pcm_data)
+    )
+    return header
 
 
 def convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path):
@@ -123,13 +164,13 @@ def determine_output_paths(folder, filename_base):
     return wav_output, mp3_output
 
 
-# เก็บฟังก์ชันเดิมไว้เป็น backup
 def save_binary_file(file_name, data):
     """บันทึกไฟล์ binary"""
     with open(file_name, "wb") as f:
         f.write(data)
 
 
+# เก็บฟังก์ชันเดิมไว้เป็น backup
 def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     """แปลงข้อมูลเสียงเป็นรูปแบบ WAV"""
     parameters = parse_audio_mime_type(mime_type)
