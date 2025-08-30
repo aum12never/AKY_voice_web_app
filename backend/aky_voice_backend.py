@@ -3,8 +3,8 @@
 import os
 import struct
 import subprocess
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai.types import GenerationConfig
 
 
 def run_tts_generation(
@@ -14,11 +14,11 @@ def run_tts_generation(
 ):
     """
     ฟังก์ชันหลักสำหรับสร้าง TTS ด้วย Google AI Studio
-    ใช้ไลบรารี google.genai และ google.genai.types
+    ใช้ไลบรารี google.generativeai
     """
     try:
-        # สร้าง Client object
-        client = genai.Client(api_key=api_key)
+        # Configure API key
+        genai.configure(api_key=api_key)
 
         # เตรียม prompt
         full_prompt = f"""
@@ -27,17 +27,20 @@ def run_tts_generation(
         {main_text}
         """
 
-        # สร้าง config object ด้วย types จาก google.genai
-        config = types.GenerateContentConfig(
+        # สร้าง model
+        model = genai.GenerativeModel('gemini-2.5-flash-preview-tts')
+
+        # สร้าง config object
+        config = GenerationConfig(
             temperature=temperature,
             response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=voice_name
-                    )
-                )
-            )
+            speech_config={
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": voice_name
+                    }
+                }
+            }
         )
 
         # สร้างเส้นทางไฟล์
@@ -45,10 +48,9 @@ def run_tts_generation(
             output_folder, output_filename)
 
         # เรียกใช้ API
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-tts",
-            contents=full_prompt,
-            config=config
+        response = model.generate_content(
+            full_prompt,
+            generation_config=config
         )
 
         # ดึงข้อมูลเสียงจาก response
@@ -67,7 +69,8 @@ def run_tts_generation(
             convert_with_ffmpeg(ffmpeg_path, wav_path, mp3_path)
 
             # ลบไฟล์ temporary WAV
-            os.remove(wav_path)
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
 
             return mp3_path
         else:
