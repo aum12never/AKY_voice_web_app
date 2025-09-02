@@ -1,4 +1,4 @@
-# File: streamlit_app.py (Supabase Profile Storage)
+# File: streamlit_app.py (Supabase Profile Storage + Debug)
 # -*- coding: utf-8 -*-
 
 import streamlit as st
@@ -6,6 +6,7 @@ import os
 import json
 from backend.aky_voice_backend import run_tts_generation
 from typing import Dict, Any
+from datetime import datetime
 
 # Supabase imports
 try:
@@ -30,14 +31,33 @@ def get_supabase_client() -> Client:
         return None
 
 
+def test_supabase_connection():
+    """ทดสอบการเชื่อมต่อ Supabase"""
+    if not SUPABASE_AVAILABLE:
+        return False, "Supabase library not installed"
+    
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return False, "Cannot create Supabase client"
+        
+        # ทดสอบการเชื่อมต่อ
+        result = supabase.table("user_profiles").select("count", count="exact").execute()
+        return True, f"Connected successfully. Records count: {result.count}"
+    except Exception as e:
+        return False, f"Connection test failed: {str(e)}"
+
+
 def load_profiles_from_supabase() -> Dict:
     """โหลดข้อมูล Profiles จาก Supabase"""
     if not SUPABASE_AVAILABLE:
+        st.session_state.storage_status = "❌ Supabase library not available - using local storage"
         return load_profiles_from_file()
     
     try:
         supabase = get_supabase_client()
         if not supabase:
+            st.session_state.storage_status = "❌ Cannot connect to Supabase - using local storage"
             return load_profiles_from_file()
         
         # ใช้ APP_PASSWORD เป็น user_id เพื่อแยกครอบครัว
@@ -47,6 +67,8 @@ def load_profiles_from_supabase() -> Dict:
         
         if result.data:
             profiles_data = result.data[0]["profiles_data"]
+            st.session_state.storage_status = f"✅ Loaded from Supabase - Last updated: {result.data[0].get('updated_at', 'Unknown')}"
+            st.session_state.supabase_record_id = result.data[0]["id"]
             return json.loads(profiles_data)
         else:
             # ไม่มีข้อมูล สร้างใหม่
@@ -63,21 +85,24 @@ def load_profiles_from_supabase() -> Dict:
                 'last_profile': 'Default'
             }
             save_profiles_to_supabase(default_data)
+            st.session_state.storage_status = "✅ Created new record in Supabase"
             return default_data
             
     except Exception as e:
-        st.warning(f"Supabase error, using local storage: {e}")
+        st.session_state.storage_status = f"❌ Supabase error: {str(e)} - using local storage"
         return load_profiles_from_file()
 
 
 def save_profiles_to_supabase(data: Dict):
     """บันทึกข้อมูล Profiles ลง Supabase"""
     if not SUPABASE_AVAILABLE:
+        st.session_state.save_status = "❌ Supabase not available - saved to local file"
         return save_profiles_to_file(data)
     
     try:
         supabase = get_supabase_client()
         if not supabase:
+            st.session_state.save_status = "❌ Cannot connect to Supabase - saved to local file"
             return save_profiles_to_file(data)
         
         user_id = st.secrets["APP_PASSWORD"]
@@ -86,22 +111,27 @@ def save_profiles_to_supabase(data: Dict):
         # ตรวจสอบว่ามี record อยู่หรือไม่
         existing = supabase.table("user_profiles").select("id").eq("user_id", user_id).execute()
         
+        current_time = datetime.now().isoformat()
+        
         if existing.data:
             # Update existing record
-            supabase.table("user_profiles").update({
+            result = supabase.table("user_profiles").update({
                 "profiles_data": profiles_json,
-                "updated_at": "now()"
+                "updated_at": current_time
             }).eq("user_id", user_id).execute()
+            st.session_state.save_status = f"✅ Updated in Supabase at {current_time}"
         else:
             # Insert new record
-            supabase.table("user_profiles").insert({
+            result = supabase.table("user_profiles").insert({
                 "user_id": user_id,
-                "profiles_data": profiles_json
+                "profiles_data": profiles_json,
+                "updated_at": current_time
             }).execute()
+            st.session_state.save_status = f"✅ Created in Supabase at {current_time}"
             
         return True
     except Exception as e:
-        st.warning(f"Supabase save error, using local storage: {e}")
+        st.session_state.save_status = f"❌ Supabase save error: {str(e)} - saved to local file"
         return save_profiles_to_file(data)
 
 
@@ -255,6 +285,14 @@ def check_password():
 # --- Main App (เหมือนเดิมทุกอย่าง) ---
 st.set_page_config(page_title="Affiliate Voice Generator Pro", layout="wide")
 st.title("🎙️ Affiliate Voice Generator Pro")
+
+# เพิ่ม Connection Status ที่ด้านบน
+if 'storage_status' in st.session_state:
+    if "✅" in st.session_state.storage_status:
+        st.success(st.session_state.storage_status)
+    else:
+        st.warning(st.session_state.storage_status)
+
 st.write("---")
 
 if check_password():
@@ -269,6 +307,27 @@ if check_password():
     except KeyError:
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
+
+    # --- Connection Test (เพิ่มใหม่) ---
+    with st.expander("🔧 System Status & Debug", expanded=False):
+        col_test1, col_test2 = st.columns(2)
+        
+        with col_test1:
+            if st.button("🔍 Test Supabase Connection"):
+                with st.spinner("Testing connection..."):
+                    success, message = test_supabase_connection()
+                    if success:
+                        st.success(f"✅ {message}")
+                    else:
+                        st.error(f"❌ {message}")
+        
+        with col_test2:
+            st.write("**Current Status:**")
+            st.write(f"- Supabase Library: {'✅ Available' if SUPABASE_AVAILABLE else '❌ Not Available'}")
+            if 'storage_status' in st.session_state:
+                st.write(f"- Storage: {st.session_state.storage_status}")
+            if 'save_status' in st.session_state:
+                st.write(f"- Last Save: {st.session_state.save_status}")
 
     # --- Profile Management UI (เหมือนเดิมทุกอย่าง) ---
     with st.container(border=True):
@@ -430,7 +489,7 @@ if check_password():
                         st.code(str(e))
 
     # --- Footer Info (เพิ่มข้อมูล Supabase) ---
-    with st.expander("ℹ️ ข้อมูลเกี่ยวกับ Profile"):
+    with st.expander("ℹ️ ข้อมูลเกี่ยวกับ Profile & Security"):
         storage_type = "🔥 Supabase Database (ถาวร)" if SUPABASE_AVAILABLE else "📁 Local File (ชั่วคราว)"
         st.info(f"""
         **📁 ระบบ Profile:**
@@ -441,12 +500,15 @@ if check_password():
         - Profile 'Default' ไม่สามารถลบได้
 
         **🔒 ความปลอดภัย:**
-        - API Key ถูกเก็บใน Streamlit Secrets
-        - ข้อมูล Profile แยกตาม Family ID
+        - API Key ถูกเก็บใน Streamlit Secrets (ไม่แสดงในโค้ด)
+        - ข้อมูล Profile แยกตาม Family Password
         - Database เข้ารหัสและปลอดภัย
+        - ข้อมูลไม่ถูกแชร์ระหว่างครอบครัว
         """)
 
         if st.checkbox("🔧 แสดงข้อมูล Debug"):
             st.json(st.session_state.profiles)
             st.write("**Profile ปัจจุบัน:**", st.session_state.current_profile)
             st.write("**Storage Type:**", "Supabase" if SUPABASE_AVAILABLE else "Local File")
+            if 'supabase_record_id' in st.session_state:
+                st.write("**Supabase Record ID:**", st.session_state.supabase_record_id)
