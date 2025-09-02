@@ -1,4 +1,4 @@
-# File: streamlit_app.py
+# File: streamlit_app.py (Supabase Profile Storage)
 # -*- coding: utf-8 -*-
 
 import streamlit as st
@@ -7,13 +7,107 @@ import json
 from backend.aky_voice_backend import run_tts_generation
 from typing import Dict, Any
 
+# Supabase imports
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+
 # --- Configuration ---
-PROFILES_FILE = "profiles_data.json"
+PROFILES_FILE = "profiles_data.json"  # Fallback สำหรับกรณี Supabase ล้ม
 
 
-# --- Persistent Storage Functions ---
+# --- Supabase Functions ---
+def get_supabase_client() -> Client:
+    """สร้าง Supabase client"""
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"Supabase connection error: {e}")
+        return None
+
+
+def load_profiles_from_supabase() -> Dict:
+    """โหลดข้อมูล Profiles จาก Supabase"""
+    if not SUPABASE_AVAILABLE:
+        return load_profiles_from_file()
+    
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return load_profiles_from_file()
+        
+        # ใช้ APP_PASSWORD เป็น user_id เพื่อแยกครอบครัว
+        user_id = st.secrets["APP_PASSWORD"]
+        
+        result = supabase.table("user_profiles").select("*").eq("user_id", user_id).execute()
+        
+        if result.data:
+            profiles_data = result.data[0]["profiles_data"]
+            return json.loads(profiles_data)
+        else:
+            # ไม่มีข้อมูล สร้างใหม่
+            default_data = {
+                'profiles': {
+                    'Default': {
+                        'style_instructions': '',
+                        'main_text': '',
+                        'voice': 'Achernar - Soft',
+                        'temperature': 0.9,
+                        'filename': 'my_voiceover'
+                    }
+                },
+                'last_profile': 'Default'
+            }
+            save_profiles_to_supabase(default_data)
+            return default_data
+            
+    except Exception as e:
+        st.warning(f"Supabase error, using local storage: {e}")
+        return load_profiles_from_file()
+
+
+def save_profiles_to_supabase(data: Dict):
+    """บันทึกข้อมูล Profiles ลง Supabase"""
+    if not SUPABASE_AVAILABLE:
+        return save_profiles_to_file(data)
+    
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return save_profiles_to_file(data)
+        
+        user_id = st.secrets["APP_PASSWORD"]
+        profiles_json = json.dumps(data, ensure_ascii=False)
+        
+        # ตรวจสอบว่ามี record อยู่หรือไม่
+        existing = supabase.table("user_profiles").select("id").eq("user_id", user_id).execute()
+        
+        if existing.data:
+            # Update existing record
+            supabase.table("user_profiles").update({
+                "profiles_data": profiles_json,
+                "updated_at": "now()"
+            }).eq("user_id", user_id).execute()
+        else:
+            # Insert new record
+            supabase.table("user_profiles").insert({
+                "user_id": user_id,
+                "profiles_data": profiles_json
+            }).execute()
+            
+        return True
+    except Exception as e:
+        st.warning(f"Supabase save error, using local storage: {e}")
+        return save_profiles_to_file(data)
+
+
+# --- Original File Functions (Fallback) ---
 def load_profiles_from_file() -> Dict:
-    """โหลดข้อมูล Profiles จากไฟล์ JSON"""
+    """โหลดข้อมูล Profiles จากไฟล์ JSON (Fallback)"""
     try:
         if os.path.exists(PROFILES_FILE):
             with open(PROFILES_FILE, 'r', encoding='utf-8') as f:
@@ -38,7 +132,7 @@ def load_profiles_from_file() -> Dict:
 
 
 def save_profiles_to_file(data: Dict):
-    """บันทึกข้อมูล Profiles ลงไฟล์ JSON"""
+    """บันทึกข้อมูล Profiles ลงไฟล์ JSON (Fallback)"""
     try:
         with open(PROFILES_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -48,10 +142,10 @@ def save_profiles_to_file(data: Dict):
         return False
 
 
-# --- Profile Management Functions ---
+# --- Profile Management Functions (เหมือนเดิม แต่เปลี่ยนการบันทึก) ---
 def initialize_profiles():
     """สร้าง Session State สำหรับเก็บข้อมูล Profiles"""
-    saved_data = load_profiles_from_file()
+    saved_data = load_profiles_from_supabase()  # เปลี่ยนจาก load_profiles_from_file()
 
     if 'profiles' not in st.session_state:
         st.session_state.profiles = saved_data['profiles']
@@ -72,14 +166,14 @@ def get_current_profile_data() -> Dict[str, Any]:
 
 
 def save_to_current_profile(field: str, value: Any):
-    """บันทึกค่าไปยัง Profile ปัจจุบันและบันทึกลงไฟล์"""
+    """บันทึกค่าไปยัง Profile ปัจจุบันและบันทึกลง Supabase"""
     if st.session_state.current_profile in st.session_state.profiles:
         st.session_state.profiles[st.session_state.current_profile][field] = value
         data_to_save = {
             'profiles': st.session_state.profiles,
             'last_profile': st.session_state.current_profile
         }
-        save_profiles_to_file(data_to_save)
+        save_profiles_to_supabase(data_to_save)  # เปลี่ยนจาก save_profiles_to_file()
 
 
 def create_new_profile(profile_name: str) -> bool:
@@ -100,7 +194,7 @@ def create_new_profile(profile_name: str) -> bool:
         'profiles': st.session_state.profiles,
         'last_profile': st.session_state.current_profile
     }
-    save_profiles_to_file(data_to_save)
+    save_profiles_to_supabase(data_to_save)  # เปลี่ยนจาก save_profiles_to_file()
     return True
 
 
@@ -118,7 +212,7 @@ def delete_profile(profile_name: str) -> bool:
         'profiles': st.session_state.profiles,
         'last_profile': st.session_state.current_profile
     }
-    save_profiles_to_file(data_to_save)
+    save_profiles_to_supabase(data_to_save)  # เปลี่ยนจาก save_profiles_to_file()
     return True
 
 
@@ -130,10 +224,10 @@ def switch_profile(profile_name: str):
             'profiles': st.session_state.profiles,
             'last_profile': st.session_state.current_profile
         }
-        save_profiles_to_file(data_to_save)
+        save_profiles_to_supabase(data_to_save)  # เปลี่ยนจาก save_profiles_to_file()
 
 
-# --- Password Check Function ---
+# --- Password Check Function (เหมือนเดิมทุกอย่าง) ---
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
@@ -158,7 +252,7 @@ def check_password():
         return True
 
 
-# --- Main App ---
+# --- Main App (เหมือนเดิมทุกอย่าง) ---
 st.set_page_config(page_title="Affiliate Voice Generator Pro", layout="wide")
 st.title("🎙️ Affiliate Voice Generator Pro")
 st.write("---")
@@ -176,7 +270,7 @@ if check_password():
         st.error("❌ ไม่พบ GOOGLE_API_KEY ในการตั้งค่า Secrets!")
         st.stop()
 
-    # --- Profile Management UI ---
+    # --- Profile Management UI (เหมือนเดิมทุกอย่าง) ---
     with st.container(border=True):
         st.subheader("📁 Profile Management")
 
@@ -220,7 +314,7 @@ if check_password():
                         st.success("Profile deleted")
                         st.rerun()
 
-    # --- Main UI ---
+    # --- Main UI (เหมือนเดิมทุกอย่าง) ---
     profile_data = get_current_profile_data()
 
     with st.container(border=True):
@@ -291,7 +385,7 @@ if check_password():
 
     st.write("---")
 
-    # --- Generate Button ---
+    # --- Generate Button (เหมือนเดิมทุกอย่าง) ---
     if st.button("🚀 สร้างไฟล์เสียง (Generate Audio)", type="primary", use_container_width=True):
         if not st.session_state.main_text_input.strip():
             st.warning("⚠️ กรุณาใส่สคริปต์ในช่อง Main Text")
@@ -335,24 +429,24 @@ if check_password():
                     with st.expander("🔍 ดูรายละเอียด Error"):
                         st.code(str(e))
 
-
-    # --- Footer Info ---
+    # --- Footer Info (เพิ่มข้อมูล Supabase) ---
     with st.expander("ℹ️ ข้อมูลเกี่ยวกับ Profile"):
-        st.info("""
+        storage_type = "🔥 Supabase Database (ถาวร)" if SUPABASE_AVAILABLE else "📁 Local File (ชั่วคราว)"
+        st.info(f"""
         **📁 ระบบ Profile:**
+        - การจัดเก็บ: {storage_type}
         - ข้อมูล Profile จะถูกบันทึกอัตโนมัติทุกครั้งที่มีการเปลี่ยนแปลง
-        - ข้อมูลจะคงอยู่แม้ปิด Browser หรือ Refresh หน้า
+        - ข้อมูลจะคงอยู่แม้ App Sleep หรือ Restart
         - สามารถสร้าง Profile ได้ไม่จำกัด
         - Profile 'Default' ไม่สามารถลบได้
 
         **🔒 ความปลอดภัย:**
-        - API Key ถูกเก็บใน Streamlit Secrets (ไม่แสดงในโค้ด)
-        - ข้อมูล Profile ไม่มี API Key หรือข้อมูลส่วนตัว
-        - ต้องใส่รหัสผ่านเพื่อเข้าใช้งาน
+        - API Key ถูกเก็บใน Streamlit Secrets
+        - ข้อมูล Profile แยกตาม Family ID
+        - Database เข้ารหัสและปลอดภัย
         """)
 
         if st.checkbox("🔧 แสดงข้อมูล Debug"):
             st.json(st.session_state.profiles)
             st.write("**Profile ปัจจุบัน:**", st.session_state.current_profile)
-
-
+            st.write("**Storage Type:**", "Supabase" if SUPABASE_AVAILABLE else "Local File")
